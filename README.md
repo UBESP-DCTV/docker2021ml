@@ -31,7 +31,7 @@ Once you have Docker installed, you can execute the master's RStudio Server serv
 
 2. run 
   ```
-  # docker run --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 corradolanera/docker2021ml
+  # docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 corradolanera/docker2021ml
   ```
 
 > NOTE 2: Docker on Windows requires an unusual path specification, ie, `C:\Users\<you>\Documents\<your_project>` becomes `/c/Users/<you>/Documents/<your_project>`, take that into consideration when running the above mentioned command to correctly type your `<path/to/your/project/directory>`!
@@ -41,7 +41,7 @@ Once you have Docker installed, you can execute the master's RStudio Server serv
   ```
   #! /bin/sh
 
-  docker run --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 corradolanera/docker2021ml
+  docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 corradolanera/docker2021ml
   ```
   
   And next simply copy that file in your `<path/to/your/project/directory>`, and run (from the command line, inside your `<path/to/your/project/directory>`)
@@ -58,21 +58,26 @@ Once you have Docker installed, you can execute the master's RStudio Server serv
   
 > NOTE 4: The project's folder will be automatically synchronized with the `persistent-folder/` inside the RStudio main folder, everything else will be definitively destroyed and loosed once the container will be shut-down. So, pay attention to put everything you need to work into your main project folder (into your local system) and to copy everything you produce or create from RStudio Server (and you don't want to loose) into the `persistent-folder/` folder (and the content will appear and stored into your project's folder locally).
 
+> NOTE 5: you can run as many container you like, just change the left side number of the couple of number after `-p` in the running call, adding up numbers at the end (eg, `-p 8788:8787`, or `8789:8787`), ... . Next to use the RStudio Server of "that" container visit the corresponding `localhost`, eg, `localhost:8788`, `localhost:8789`, .... .
+
+> NOTE 6: If you run multiple containers it is strongly suggested to keep track of the corresponding `<name>`s running `# docker ps` just after the execution of the command to run it, to be able to correctly `stop` them.
+
 4. work into RStudio Server at your convenience
 
-5. shut-down the container going back to the active running command line and press
-  ```
-  CTRL + c
-  ```
-  From that very moment RStudio Server will become unavailable and all the running environment is destroyed.
+
+
+
+### Shut-down the service
+
+Even if you close the command line session, or the browser page in which it serves RStudio you are using, the runned container will continue to run uneffected. In that case, to shut-down it you need to return to a console, find the `<name>` Docker has attribute to that container running `# docker ps`(column `NAMES`), and execute `# docker stop <name>`.
+
+From that very moment RStudio Server will become unavailable and all the running environment is completely destroyed.
   
-> NOTE 5: WARNING: at the exact moment you shut-down the container EVERYTHING not stored in the `persistent-folder` will gone FOREVER without ANY option for restore! Everytime a new container will run-up the system will be every exactly the same with the only exception of the content of the folder `persistent-folder` which will be always synchronized with the content of the current project's folder from which `# bash docker-run.sh` is executed.
+> NOTE 7: **WARNING**: at the exact moment you shut-down the container EVERYTHING not stored in the `persistent-folder` will gone FOREVER without ANY option for restore! Every time a new container will run-up it will be exactly the same as always it has been the first time with the only exception of the content of the folder `persistent-folder` which will be always synchronized with the content of the current project's folder from which `# bash docker-run.sh` is executed.
 
-> NOTE 6: Because of a technical artifact, an empty folder named `kitematic` is present, you can and should completely ignore it.
+> NOTE 8: Because of a technical artifact, an empty folder named `kitematic` is present, you can and should completely ignore it.
 
-> NOTE 7: If you close the command line session, the container will continue to run uneffected. In that case, to shut-down it you need to return to a console, find the `<name>` Docker has attribute tho that container running `# docker ps`(column `NAMES`), and execute `# docker kill <name>`.
 
-> NOTE 8: you can run as many container you like, just change the left side number of the couple of number after `-p` in the running call, adding an id number at the end (eg, `-p 87871:8787`, or `87872:8787`), next to use the RStudio Server of "that" container visit the corresponding `localhost`, eg, `localhost:87871`. If you run multiple containers it is suggested to keep track of the corresponding `<name>`s running `# docker ps` just after the execution of the command to run it, to be able to correctly `kill` them.
 
 
 ## Reproducible development
@@ -113,6 +118,6 @@ Now, to ran this self created image, you can use the provided `docker-run.sh` sc
   ```
   # bash docker-run.sh
   ```
-> NOTE 9: or you can explicitly running the command `docker run --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 docker2021ml`, this time without the `corradolanera/` initial part of the image's name to `docker run` (personalizing the left side of the `-p` argument, in case you need multiple instances)
+> NOTE 9: or you can explicitly running the command `docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 docker2021ml`, this time without the `corradolanera/` initial part of the image's name to `docker run` (personalizing the left side of the `-p` argument, in case you need multiple instances)
   
   
