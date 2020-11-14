@@ -36,25 +36,24 @@ RUN install2.r \
   kknn \
   mice \
   tm \
+  SnowballC \
   wordcloud
 
-# install system dependencies required for the R packages installed
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  # required by igraph
-  libglpk-dev \
-  libgmp3-dev \
-  libxml2-dev
-  
-# Install R Packages for Visualization
+# Install required R Packages not directly library()ed from scripts
 RUN install2.r \
   --error --skipinstalled \
   # Snapshot available as of April 23, 2020; just before the release of r-4.0.0
   --repos $pkgsnap \
   # packages to install
-  igraph \
-  VIM
+  VIM \
+  pryr
 
-
+# Setup global profile's option for fixed-snapshot package repository
+RUN echo '\
+  options(list( \
+    repos = "https://packagemanager.rstudio.com/all/__linux__/bionic/274" \
+  )) ' > /usr/local/lib/R/etc/Rprofile.site
+  
 # copy all the materials from the local directory to the docker wd
 COPY . /home/rstudio
 
