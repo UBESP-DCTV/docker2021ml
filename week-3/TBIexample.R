@@ -3,24 +3,34 @@
 #################################################################
 
 library(rms)
-library(Hmisc)
+options(datadist = "dd")
+
 library(mice)
 library(foreign)
 library(VIM)
 
 
-setwd("C:/Users/Baldi/didattica Padova/Master ML/slides/data")
-TBI <- read.spss('TBI.sav',use.value.labels=F,to.data.frame=T)
+TBI <- read.spss('TBI.sav',
+  use.value.labels = FALSE,
+  to.data.frame = TRUE
+)
+
 describe(TBI)
-TBI$pupil	<- ifelse(TBI$d.pupil==9,NA,TBI$d.pupil)
+
+TBI$pupil <- ifelse(TBI$d.pupil == 9, NA, TBI$d.pupil)
 
 ## Missing value analysis
-par(mfrow=c(1,1))
+par(mfrow = c(1, 1))
 
 na.patterns <- naclus(TBI)
-plot(na.patterns, ylab="Fraction of NAs in common")
+plot(na.patterns, ylab = "Fraction of NAs in common")
 
-aggr = aggr(TBI, col=mdc(1), numbers=TRUE, sortVars=TRUE, labels=names(TBI), cex.axis=.7, gap=2, ylab=c("Proportion of missingness","Missingness Pattern"),combined=F)
+aggr <- aggr(TBI,
+  col = mdc(1), numbers = TRUE, sortVars = TRUE, labels = names(TBI),
+  cex.axis = 0.7, gap = 2,
+  ylab = c("Proportion of missingness", "Missingness Pattern"),
+  combined = FALSE
+)
 
 # Motor in 5 categories: 1/2; 3; 4; 5/6; 9/NA
 TBI$motor	<- ifelse(is.na(TBI$d.motor),9,TBI$d.motor)
@@ -80,9 +90,8 @@ TBI1$Age30  <- ifelse(TBI1$age<30,1,0)
 TBI1$cisterns <- ifelse(TBI1$cisterns>1,1,0)
 TBI1$pupil<-as.factor(TBI1$pupil)
 
-dd <- datadist(TBI1)
-options(datadist="dd")
 
+dd <- datadist(TBI1)
 describe(TBI1)
 
 ##########################
@@ -118,27 +127,45 @@ gm <- mice(TBI1, m=5,maxit=5,
 gm
 
 ## Some diagnostics
-densityplot(x=gm,data= ~ hb)
-densityplot(x=gm,layout=c(2,4))
+densityplot(x = gm,data = ~ hb)
+densityplot(x = gm,layout = c(2, 4))
 
 ## Adjusted analyses
 ## MI, n  = 2159
 
-a=with(gm,lrm(unfav ~ trial + age
-              + hypoxia + hypotens+tsah + pupil+motor +ctclass))
+a <- with(gm,
+  lrm(unfav ~ trial + age + hypoxia + hypotens + tsah + pupil
+              + motor + ctclass)
+)
+
 summary(a)
 pool(a)
 
-fit.mult.impute(unfav ~ trial + age + hypoxia + hypotens+tsah + pupil+motor +ctclass , lrm, xtrans = gm, data = TBI1)
+fit.mult.impute(
+  unfav ~ trial + age + hypoxia + hypotens + tsah + pupil
+          + motor + ctclass,
+  lrm,
+  xtrans = gm,
+  data = TBI1
+)
 
 ## pupils original, imputation for other covars, n=2036
 TBI2  <- TBI1[!is.na(TBI1$pupil),]
 dim(TBI2) # n=2036
-fit.mult.impute(unfav ~ trial + age + motor+ pupil +
-                    hypoxia + hypotens + ctclass + tsah, lrm, xtrans = gm, data = TBI2)
+fit.mult.impute(
+  unfav ~ trial + age + motor + pupil + hypoxia + hypotens
+          + ctclass + tsah,
+  lrm,
+  xtrans = gm,
+  data = TBI2
+)
 
 # MICE SI, n  = 2159
-lrm(unfav ~  age + motor +pupil + hypoxia + hypotens + ctclass + tsah, data = complete(gm,1))
+lrm(
+  unfav ~  age + motor + pupil + hypoxia + hypotens
+             + ctclass + tsah,
+  data = complete(gm, 1)
+)
 
-gm1=complete(gm,action=1)
+gm1 <- complete(gm, action = 1)
 
