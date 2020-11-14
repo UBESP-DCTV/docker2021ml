@@ -39,21 +39,26 @@ RUN install2.r \
   SnowballC \
   wordcloud
 
-# Install required R Packages not directly library()ed from scripts
+# Install required R Packages not directly library()ed from scripts (module 1)
 RUN install2.r \
   --error --skipinstalled \
   # Snapshot available as of April 23, 2020; just before the release of r-4.0.0
   --repos $pkgsnap \
   # packages to install
   VIM \
-  pryr
+  pryr \
+  BiocManager
 
+# Install required Bioconductor R Packages not directly library()ed from scripts
+RUN R -e "BiocManager::install('Rgraphviz', ask = FALSE, version='3.10')"
+  
 # Setup global profile's option for fixed-snapshot package repository
 RUN echo '\
   options(list( \
     repos = "https://packagemanager.rstudio.com/all/__linux__/bionic/274" \
   )) ' > /usr/local/lib/R/etc/Rprofile.site
   
+
 # copy all the materials from the local directory to the docker wd
 COPY . /home/rstudio
 
