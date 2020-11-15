@@ -14,12 +14,12 @@ WORKDIR /home/rstudio
 EXPOSE 8787
 
 
+# Set r package snapshot available as of April 23, 2020; just before the release of r-4.0.0
 ENV pkgsnap=https://packagemanager.rstudio.com/all/__linux__/bionic/274
 
 # Install Basic Utility R Packages
 RUN install2.r \
   --error --skipinstalled \
-  # Snapshot available as of April 23, 2020; just before the release of r-4.0.0
   --repos $pkgsnap \
   # packages to install
   caret \
@@ -30,7 +30,6 @@ RUN install2.r \
 # Install additionl R Packages for Analyses
 RUN install2.r \
   --error --skipinstalled \
-  # Snapshot available as of April 23, 2020; just before the release of r-4.0.0
   --repos $pkgsnap \
   # packages to install
   kknn \
@@ -42,7 +41,6 @@ RUN install2.r \
 # Install required R Packages not directly library()ed from scripts (module 1)
 RUN install2.r \
   --error --skipinstalled \
-  # Snapshot available as of April 23, 2020; just before the release of r-4.0.0
   --repos $pkgsnap \
   # packages to install
   VIM \
@@ -50,6 +48,7 @@ RUN install2.r \
   BiocManager
 
 # Install required Bioconductor R Packages not directly library()ed from scripts
+# Note: version 3.10 of bioc is the latest available for R 3.6
 RUN R -e "BiocManager::install('Rgraphviz', ask = FALSE, version='3.10')"
   
 # Setup global profile's option for fixed-snapshot package repository

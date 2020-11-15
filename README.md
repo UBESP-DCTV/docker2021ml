@@ -36,7 +36,7 @@ Once you have Docker installed, you can execute the master's RStudio Server serv
 
 > NOTE 2: Docker on Windows requires an unusual path specification, ie, `C:\Users\<you>\Documents\<your_project>` becomes `/c/Users/<you>/Documents/<your_project>`, take that into consideration when running the above mentioned command to correctly type your `<path/to/your/project/directory>`!
 
-> NOTE 3: You can create a bash script for all the long command above to save typing. Just create a file named `docker-run.sh` with the following content
+> NOTE 3: You can create a bash script for all the long command above to save typing. Just create, inside your project directory, a file named `docker-run.sh` with the following content
 
   ```
   #! /bin/sh
@@ -44,7 +44,7 @@ Once you have Docker installed, you can execute the master's RStudio Server serv
   docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 corradolanera/docker2021ml
   ```
   
-  And next simply copy that file in your `<path/to/your/project/directory>`, and run (from the command line, inside your `<path/to/your/project/directory>`)
+  and simply run it (from the command line, inside your `<path/to/your/project/directory>`)
   
   ```
   # bash docker-run.sh
@@ -82,7 +82,7 @@ From that very moment RStudio Server will become unavailable and all the running
 
 ## Reproducible development
 
-To recreate the Docker image by your own, you can follow the following instruction
+To create the Docker image by your own, you can follow the following instruction
 
 1. get the raw project data:
 
@@ -101,7 +101,7 @@ To recreate the Docker image by your own, you can follow the following instructi
   # bash docker-build.sh
   ```
 
-Now, to ran this self created image, you can use the provided `docker-run.sh` script:
+Now, if you are on Linux, to run this self created image, you can use the provided `docker-run.sh` script:
 
   
 1. Copy the `docker-run.sh` script provided with the project in your personal project's folder
@@ -118,6 +118,6 @@ Now, to ran this self created image, you can use the provided `docker-run.sh` sc
   ```
   # bash docker-run.sh
   ```
-> NOTE 9: or you can explicitly running the command `docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 docker2021ml`, this time without the `corradolanera/` initial part of the image's name to `docker run` (personalizing the left side of the `-p` argument, in case you need multiple instances)
+> NOTE 9: or, you can explicitly running the command `docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 docker2021ml`, this time **without the `corradolanera/` initial part** for the image's name into the `docker run` call (personalizing the left side of the `-p` argument, in case you need multiple instances).
   
   
