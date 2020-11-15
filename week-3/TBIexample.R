@@ -134,8 +134,10 @@ densityplot(x = gm,layout = c(2, 4))
 ## MI, n  = 2159
 
 a <- with(gm,
-  lrm(unfav ~ trial + age + hypoxia + hypotens + tsah + pupil
-              + motor + ctclass)
+  glm(unfav ~ trial + age + hypoxia + hypotens + tsah + pupil
+              + motor + ctclass,
+    family = binomial()
+  )
 )
 
 summary(a)
@@ -144,7 +146,7 @@ pool(a)
 fit.mult.impute(
   unfav ~ trial + age + hypoxia + hypotens + tsah + pupil
           + motor + ctclass,
-  lrm,
+  glm, family = binomial(),
   xtrans = gm,
   data = TBI1
 )
@@ -155,16 +157,17 @@ dim(TBI2) # n=2036
 fit.mult.impute(
   unfav ~ trial + age + motor + pupil + hypoxia + hypotens
           + ctclass + tsah,
-  lrm,
+  glm, family = binomial(),
   xtrans = gm,
   data = TBI2
 )
 
 # MICE SI, n  = 2159
-lrm(
+glm(
   unfav ~  age + motor + pupil + hypoxia + hypotens
              + ctclass + tsah,
-  data = complete(gm, 1)
+  data = complete(gm, 1),
+  family = binomial()
 )
 
 gm1 <- complete(gm, action = 1)
