@@ -42,10 +42,10 @@ The very first time you run the `docker run` command, everything that is require
   # docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 corradolanera/docker2021ml
   ```
 > NOTES:
-  - We use the convention that `$` starts a line of code you can run as a standard user, while `#` start a line of code to run with high privilege (ie, as `sudo`, on Linux/mac, or as `administrator`, on Windows).
-  - Docker on Windows requires an unusual path specification, ie, `C:\Users\<your_name>\Documents\<your_project>` becomes `/c/Users/<your_name>/Documents/<your_project>`, take that into consideration when running the above mentioned command to correctly type your `<path/to/your/project/directory>`. Eg, to link the service to the folder `C:\Users\cl\Documents\master_ml`, I would need to type `/c/Users/cl/Documents/master_ml`.
-  - If you do not need/want a persistent storage for the service (ie, you just want to explore the hands-on or R) you can exclude the `-v <path/to/your/project/directory>:/home/rstudio/persistent-folder` part of the call
-  - You can change the password as you prefer changing the argument after `-e PASSWORD=` (it does not matter at all), the user to use for the login it is always `rstudio`.
+>  - We use the convention that `$` starts a line of code you can run as a standard user, while `#` start a line of code to run with high privilege (ie, as `sudo`, on Linux/mac, or as `administrator`, on Windows).
+>  - Docker on Windows requires an unusual path specification, ie, `C:\Users\<your_name>\Documents\<your_project>` becomes `/c/Users/<your_name>/Documents/<your_project>`, take that into consideration when running the above mentioned command to correctly type your `<path/to/your/project/directory>`. Eg, to link the service to the folder `C:\Users\cl\Documents\master_ml`, I would need to type `/c/Users/cl/Documents/master_ml`.
+>  - If you do not need/want a persistent storage for the service (ie, you just want to explore the hands-on or R) you can exclude the `-v <path/to/your/project/directory>:/home/rstudio/persistent-folder` part of the call
+>  - You can change the password as you prefer changing the argument after `-e PASSWORD=` (it does not matter at all), the user to use for the login it is always `rstudio`.
 
 If you do not want to type all the command every time, you can create a bash script for all the long command above to save typing: just create a file named `docker-run.sh` inside your project directory with the following content (personalized if necessary)
 
@@ -68,9 +68,9 @@ and simply run it from the terminal:
   - psw: `docker2021ml` (or the one you have chosen if you have changed it)
   
 > NOTES:
-  - The project's folder `<path/to/your/project/directory>` will be automatically synchronized with the `persistent-folder/` inside the RStudio service's main folder, everything else will be **definitively destroyed** and loosed once the container will be shut-down. So, pay attention to put everything you need to work into your main project folder (into your local system) and to copy everything you produce or create from RStudio Server (and you don't want to loose) into the `persistent-folder/` folder, and the content will automatically and immediately appear and stored into your project's folder locally (structurally they will be the _same_ folder, no copy will happen).
-  - You can run as many container you like (if you would like more than one occurence), just change the left side number of the couple of numbers after `-p` in the running call, adding up numbers at the end (eg, `-p 8788:8787`, or `8789:8787`, ...). Next, to use the RStudio Server of "that" container visit the corresponding `localhost`'s port in a browser, eg, `localhost:8788`, `localhost:8789`, .... .
-  - If you run multiple containers it is strongly suggested to keep track of the corresponding `<name>`s running `# docker ps` just after the execution of the command to run it, to be able to correctly `stop` them (see the next section).
+>  - The project's folder `<path/to/your/project/directory>` will be automatically synchronized with the `persistent-folder/` inside the RStudio service's main folder, everything else will be **definitively destroyed** and loosed once the container will be shut-down. So, pay attention to put everything you need to work into your main project folder (into your local system) and to copy everything you produce or create from RStudio Server (and you don't want to loose) into the `persistent-folder/` folder, and the content will automatically and immediately appear and stored into your project's folder locally (structurally they will be the _same_ folder, no copy will happen).
+>  - You can run as many container you like (if you would like more than one occurence), just change the left side number of the couple of numbers after `-p` in the running call, adding up numbers at the end (eg, `-p 8788:8787`, or `8789:8787`, ...). Next, to use the RStudio Server of "that" container visit the corresponding `localhost`'s port in a browser, eg, `localhost:8788`, `localhost:8789`, .... .
+>  - If you run multiple containers it is strongly suggested to keep track of the corresponding `<name>`s running `# docker ps` just after the execution of the command to run it, to be able to correctly `stop` them (see the next section).
 
 Now, you can enjoy working into RStudio Server at your convenience!
 
@@ -84,9 +84,9 @@ Even if you close the command line session, or the browser page in which it serv
 From that very moment RStudio Server will become unavailable and all the running environment is **completely destroyed**.
   
 > NOTES:
-  - **WARNING**: at the exact moment you shut-down the container **EVERYTHING not stored in the `persistent-folder` is gone. FOREVER**. You will not have ANY option for restore!
-  - Every time a new container will run-up it will be exactly the same as always it has been the first time with the only exception of the content of the folder `persistent-folder` which will be always the content of the project's folder `<path/to/your/project/directory>` defined when you `docker run ...` the service.
-  - Because of a technical artifact, an empty folder named `kitematic` is present, you can (and you should) completely ignore it.
+>  - **WARNING**: at the exact moment you shut-down the container **EVERYTHING not stored in the `persistent-folder` is gone. FOREVER**. You will not have ANY option for restore!
+>  - Every time a new container will run-up it will be exactly the same as always it has been the first time with the only exception of the content of the folder `persistent-folder` which will be always the content of the project's folder `<path/to/your/project/directory>` defined when you `docker run ...` the service.
+>  - Because of a technical artifact, an empty folder named `kitematic` is present, you can (and you should) completely ignore it.
 
 
 
@@ -130,6 +130,6 @@ Now, if you are on Linux, to run this self created image, you can use the provid
   # bash docker-run.sh
   ```
 > NOTE:
-  - clearly, you can explicitly running the command `docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 docker2021ml`, this time **without the `corradolanera/` initial part** for the image's name (you are now running the local version of the image, not the one provided by dockerhub) into the `docker run` call (personalizing the left side of the `-p` argument, in case you need multiple instances).
+>  - clearly, you can explicitly running the command `docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 docker2021ml`, this time **without the `corradolanera/` initial part** for the image's name (you are now running the local version of the image, not the one provided by dockerhub) into the `docker run` call (personalizing the left side of the `-p` argument, in case you need multiple instances).
   
   
