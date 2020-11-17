@@ -169,32 +169,33 @@ To create the Docker image on your own, you can:
   cd docker2021ml
   ```
 
-3. build the Docker image
+3. build the Docker image using the `build` macro in the `Makefile`
   
   ```
-  # bash docker-build.sh
+  # make build
   ```
 
 Now, if you are on Linux, to run this self-created image, you can use the provided `docker-run.sh` script. It links the folder in which the Terminal is when running the script to the `/home/rstudio/persistent-folder/` inside the container:
 
   
-1. Copy the `docker-run.sh` script provided with the project in your personal project's folder
+1. Copy the `Makefile` script provided with the project in your personal project's folder
 
   ```
-  $ cp docker-run.sh <path/to/your/project/folder>
+  $ cp Makefile <path/to/your/project/folder>
   ```
 
-2. enter in your project folder
+2. Enter in your project folder
 
   ```
   $ cd <path/to/your/project/folder>
   ```
   
-3. execute the script to run the container for the RStudio Server service:
+3. Execute the `run` macro to run the container for the RStudio Server service (listening on the standard port `localhost:8787`):
 
   ```
-  # bash docker-run.sh
+  # make run
   ```
+  
 > NOTE:
 >  - clearly, you can explicitly running the command `docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 docker2021ml` instead, personalizing the left side of the `-p` argument, in case you need multiple instances. This time you will run the container from the image "without" the `corradolanera/` initial part because you are now running the local version of the image and not the one provided by the Docker-Hub.
   

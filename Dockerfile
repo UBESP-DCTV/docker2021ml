@@ -57,8 +57,6 @@ RUN echo '\
     repos = "https://packagemanager.rstudio.com/all/__linux__/bionic/274" \
   )) ' > /usr/local/lib/R/etc/Rprofile.site
   
-
 # copy all the materials from the local directory to the docker wd
 COPY . /home/rstudio
-
 
