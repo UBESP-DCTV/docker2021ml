@@ -1,19 +1,96 @@
-# Docker image for the 2020/21 edition of the UniPD Master in Machine Learning for clinical research
+# docker2021ml
+
+This repository contains the source code materials to build the Docker _image_ and run _containers_' based on that image. It includes the RStudio Server service and files for the 2020/21 edition of the UniPD [**Master in Machine Learning and Big Data for Precision Medicine and Biomedical Research**](https://www.unipd.it/corsi-master/machine-learning-big-data).
+
+
+
+
+# Index
+
+- [What is that?](#what-is-that)
+- [Prerequisites](#prerequisites)
+- [Run and use the RStudio Server environment for the Master](#run-and-use-the-rstudio-server-environment-for-the-master-run-and-use)
+- [Projects' Hands-on](#projects-hands-on)
+- [Shut-down the service](#shut-dowm-the-service)
+- [Updates](#updates)
+- [Remove and Clean](#remove-and-clean)
+- [Reproducible development](#reproducible-development)
+- [Code of conduct](#code-of-conduct)
+- [Warranty declaration](#warranty-declaration)
+
+
+
+## What is that?
+
+### Docker
+
+Docker is an open platform for developing, shipping, and running applications. Docker enables you to separate your applications from your infrastructure [...]
+
+--- https://docs.docker.com/get-started/overview/
+
+### Containers and Images
+
+A **container** is a standard unit of software that packages up code and all its dependencies so the application runs quickly and reliably from one computing environment to another.
+
+A Docker **image** is a lightweight, standalone, executable package of software that includes everything needed to run an application: code, runtime, system tools, system libraries and settings.
+
+Docker **containers** are isolated from one another and bundle their own software, libraries and configuration files.
+
+--- https://www.docker.com/resources/what-container
  
-This repository contains the source code materials to build and run the Docker image for the 2020/21 edition of the UniPD Master in Machine Learning and Big Data for Precision Medicine and Biomedical Research.
- 
- 
- 
- 
+
+### In _our words_ :-)
+
+Thanks to Docker, we have created an image that bundles the software and files required to run smoothly the hands-on purposed during the Master, providing the corresponding scripts. Moreover, All that "software" will run precisely the same in every system on every OS you have (provided that you have Docker installed ;-)), without requiring any additional software or configuration nor conflicting with any existing software or configuration.
+
+That will make you sure to have a fixed, stable, and isolated local working environment well configured for the Masters's exercises. That environment will always remain the same, forever. So, you will have the time to configure your local system properly (if you decide to do that, which is not required).
+
+This way, we can respond and manage possible issues by standardly referring/fixing one environment for everyone.
+
+Think of an image like a recipe to create a working box. You need to download that recipe only once (more precisely, "at most" once: an image is made up of layers, and if in the future you will need to update an image, or you will download other images that share layers with some images you already have, you will need to download the new/modified layers only).
+
+Every time you will run a container (or more than one!) from an image, it provides you with a completely brand new environment, that starts always exactly with the same shape!
+
+From your side, every time you will run a container, you will activate an instance of our "box" in your system. Next, you can visit a dedicated web page, from within any browser, that will serve as a "screen" into that box. Inside that web page (which looks into the box inside your computer, not somewhere over the Internet), you will find a complete RStudio working environment. The only difference from your "local" desktop version of RStudio (if you have installed it) is that "our" is entirely independent of your system, OS, and configurations, and vice-versa.
+
+Please pay attention to the drawbacks: every time you will shut-down a container, it will completely disappear! Anything you changed/added/removed inside a running container won't be recorded/restored the next time you will run (another) container (regardless that you have run it from the same image). Every container run-up is new (you cannot change the recipe; you cannot change the new container's initial state). Every container shut-down is 100% destroyed (destroy a box will ultimately destroy its content too). We cannot stress it more: **everything inside a shut-down container is gone**!
+
+Once you have hard-fixed this rule into your mind, we can start with the exceptions. You will see that we have set-up a linked folder (named `persistent-folder/`) from within (any) container to the folder in which you are when you run the container. If you run the container from one of your projects' folders, the `persistent-folder/` inside the container will be sharing the content (in both directions) with that project's folder! So, everything you have, add, or remove in your (local) project's folder is present, added, or removed from the `persistent-folder/` folder inside the container. Everything you add or remove in the `persistent-folder/` folder inside the container will be added or removed from your local project's folder (which won't be destroyed with the container when you will shut it down).
+
+
 ## Prerequisites
 
 To set up the **RStudio Server** service and the environment for the Master, you need **Docker** installed into your system. 
 
 Depending on your OS, the procedure is different.
 
+You can check if you have (correctly installed) Docker running the following codes:
+
+>  - Concerning the prompt in the code reported we will use the following convention: any user, including the `root` user, can run commands that are prefixed with the `$` prompt. In contrast, the `root` user (or an administrator, in Windows) must run commands that are prefixed with the `#` prompt. You can also prefix these commands with the `sudo` command, if available, to run them.
+
+
+```
+# docker --version
+```
+
+and 
+
+```
+# docker run hello-world
+```
+
+
 
 ### Linux
-If you have any recent distribution of Linux, everything should just ready out of the shell. Otherwise, you can find information [here](https://docs.docker.com/engine/install/).
+If you have any recent distribution of Linux, everything should just ready out of the shell.
+
+Otherwise, it should be sufficient that you run 
+```
+# apt update && apt -y install docker.io
+```
+
+You can find more information [here](https://docs.docker.com/engine/install/).
+
 
 
 ### Windows
@@ -47,7 +124,6 @@ The very first time you run the `docker run` command, Docker will automatically 
   # docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 corradolanera/docker2021ml
   ```
 > NOTES:
->  - Concerning the prompt in the code reported, any user, including the `root` user, can run commands that are prefixed with the `$` prompt. In contrast, the `root` user (or an administrator, in Windows) must run commands that are prefixed with the `#` prompt. You can also prefix these commands with the `sudo` command, if available, to run them.
 >  - Docker on Windows requires an unusual path specification, ie, `C:\Users\<your_name>\Documents\<your_project>` becomes `/c/Users/<your_name>/Documents/<your_project>`, take that into consideration when running the above mentioned command to correctly type your `<path/to/your/project/directory>`. Eg, to link the service to the folder `C:\Users\cl\Documents\test`, I would need to type `/c/Users/cl/Documents/test`. Please note that in that example it is supposed that the folder `C:\Users\cl\Documents\test` exists.
 >  - If you do not need/want persistent storage for the service (ie, you want to explore the hands-on or play with R), you can exclude the `-v <path/to/your/project/directory>:/home/rstudio/persistent-folder` part from the `# docker run` call.
 >  - You can change the password as you prefer changing the argument after `-e PASSWORD=` (it does not matter what the password is, but you must set one). The user name to use for the log in is always `rstudio`.
@@ -80,7 +156,7 @@ Now, you can enjoy working on RStudio Server (properly configured and prepared t
 
 
 
-## Hand-on's projects
+## Projects' hand-on
 
 Once in RStudio Server, you can find a folder for each hands-on. To working with one of them, enter in the corresponding folder, and double-click on the corresponding `.Rproj` file. Say "yes" to the RStudio's prompt to open/switch to that project.
 
@@ -153,7 +229,7 @@ That way, you will possibly free the ~ 4 GB it uses. "Possibly" because layers m
 
 
 
-## Reproducible development (for developers of the system only)
+## Reproducible development
 
 To create the Docker image on your own, you can:
 
@@ -199,4 +275,13 @@ Now, if you are on Linux, to run this self-created image, you can use the provid
 > NOTE:
 >  - clearly, you can explicitly running the command `docker run -d --rm -v <path/to/your/project/directory>:/home/rstudio/persistent-folder -e PASSWORD=docker2021ml -p 8787:8787 docker2021ml` instead, personalizing the left side of the `-p` argument, in case you need multiple instances. This time you will run the container from the image "without" the `corradolanera/` initial part because you are now running the local version of the image and not the one provided by the Docker-Hub.
   
+## Code of Conduct
   
+  Please note that the r-out-proj project is released with a [Contributor Code of Conduct](https://contributor-covenant.org/version/2/0/CODE_OF_CONDUCT.html). By contributing to this project, you agree to abide by its terms.
+
+## Warranty declaration
+
+  THE OPEN SOURCE SOFTWARE IN THIS PRODUCT IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT ANY WARRANTY, WITHOUT EVEN THE IMPLIED WARRANTY OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. SEE THE APPLICABLE LICENSES FOR MORE DETAILS.
+  
+<p xmlns:dct="http://purl.org/dc/terms/" xmlns:cc="http://creativecommons.org/ns#" class="license-text"><span rel="dct:title">docker2021ml</span> by <a rel="cc:attributionURL dct:creator" property="cc:attributionName" href="https://github.com/UBESP-DCTV/docker2021ml">UBESP-DCTV</a> is licensed under <a rel="license" href="https://creativecommons.org/licenses/by-nc-sa/4.0">CC BY-NC-SA 4.0<img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/cc.svg?ref=chooser-v1" /><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/by.svg?ref=chooser-v1" /><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/nc.svg?ref=chooser-v1" /><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/sa.svg?ref=chooser-v1" /></a></p>
+
