@@ -1,0 +1,11 @@
+ # this is the dockerignore file for the image of the master ML @UniPD
+ 
+.git
+.cache
+test
+docker-build.sh
+docker-run.sh
+Dockerfile
+README.md
+Makefile
+.gitignore

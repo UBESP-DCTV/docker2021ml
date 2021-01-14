@@ -1,0 +1,519 @@
+---
+title: "Glm -- Hands-on"
+subtitle: "v-1.2"
+author: "Prof. Dario Gregori -- Dott. Corrado Lanera"
+output: 
+  html_notebook: 
+    toc: yes
+---
+
+# Outline
++ Preamble
+    - Aims
+    - Packages
+        - `h2o`
+        - `speedglm`
+    - Functions
+    - Data used
++ Glm in R
+    - Preprocessing
+    - Glm algorithms
+        - In `stats`
+        - In `caret`
+        - In `h2o`
+        - In `speedglm`
+    - Time comparison
++ Links
+
+
+
+
+
+
+# Preamble
+
+## Aims
+
+Main aim of this hands-on are:
+
+1. show, use and compare different implementation and packages useful to
+   train and manage glm algorithms:
+   
+   + `glm`
+   + `glmnet`
+   + `caret`
+   + `h2o`
+   + `speedglm`
+
+2. show some useful function to manage missing data, normalization of
+  the input data, management of dummy variables, algorithms to be use
+  for large data set
+
+
+To achieve the objective we train models act to predict the `lpsa`
+(prostate specific antigen log level) based on the predictors provided
+by the data set `ElemStatLearn::prostate`, i.e.:
+
+    - `lcavol`  : log(cancer volume)
+    - `lweight` : log(prostate weight)
+    - `age`     : age
+    - `lbph`    : log(benign prostatic hyperplasia amount)
+    - `sve`     : seminal vesicle invasion
+    - `lcp`     : log of capsular penetration
+    - `gleason` : Gleason score
+    - `pgg45`   : percent of Gleason score 4 or 5
+        
+    - `lpsa`    : prostate specific antigen log level
+
+
+
+## Packages
+
+```{r}
+if (!requireNamespace('pacman')) {
+    install.packages('pacman', dependencies = TRUE)
+}
+
+pacman::p_load(
+    glmnet,
+    caret,
+    h2o,
+    speedglm,
+    
+    ElemStatLearn,
+    tidyverse
+)
+```
+
+
+### `h2o`
+
+The `h2o` package offers a data-distributed implementation of glms. A
+"data-distributed" version uses distributed data frames, so that the
+whole design matrix does not need to fit into memory at once.
+The `h2o` package fits both regularized and non-regularized glms.
+
+```{r}
+citation('h2o')
+```
+
+```{r, error=TRUE}
+# h2o.shutdown(prompt = FALSE)       # Shut down the specified instance.
+                                     # All data will be lost.
+
+h2o.init(nthreads = -1) # Start a local H2O cluster using nthreads = num
+                        # available cores. nthreads = -1 means "use all"
+```
+
+### `speedglm`
+
+The `speedglm` package, which fits Linear and Generalized Linear Models
+to **large data sets**.
+
+This is particularly useful if R is linked against an optimized BLAS
+(Basic Linear Algebra Subprogram). For data sets of size greater of R
+memory, the fitting is performed by an iterative algorithm.
+
+```{r}
+tidyverse_conflicts()
+```
+
+
+## Functions
+
+```{r}
+?stats::glm
+```
+
+    glm(formula, data, subset,
+        
+        family = gaussian,      # description of the error distribution and link
+                               # function to be used in the model. See `?family`
+                               
+        na.action,           # `na.omit`: remove NAs from the data/computation,
+                             # `na.exclude`: do not consider NAs in the
+                             # computation but remember their position and set
+                             # the corresponding fitted value and returned
+                             # prediction as NA,
+                             # 'na.fail`: stop if there are some NAs,
+                             # `na.pass`: keep all data, including NAs
+                             
+        x = FALSE,      # should the model matrix be used in the fitting process
+                        # returned?
+        y = TRUE,       # should the response vector be returned?
+        
+        intercept = TRUE    # Should an intercept be included in the null model?
+        
+        [...]                               # there are more entries, see `?glm`
+        
+        ...
+    )
+    
+
+```{r}
+?glmnet::glmnet
+```
+
+    glmnet(x, y,
+        family,     # 'gaussian'   : **quantitative**
+        
+                    # 'binomial'   : **2 lev factor** (the last level in
+                                     alphabetical order is the target class),
+                                     **2 col matrix of counts/proportions**
+                                     (the second column is treated as the
+                                     target class)
+                                     
+                    # 'poisson'    : **non negative counts**
+                    
+                    # 'multinomial': ** >2 lev factor**,
+                                     ** >2 col matrix of counts/proportions**
+                                     
+                    # 'cox'        : **2 col matrix** with columns named
+                                     'time' and 'status'. The latter is a
+                                     binary variable, with '1' indicating
+                                     death, and '0' indicating right censored
+                                     
+                    # 'mgaussian'  : **matrix of quantitative**
+                    
+        weights,                                           # observation weights
+        
+        alpha   = 1,       # The elasticnet mixing parameter, with 0 ≤ alpha ≤ 1
+                           # (0 for ridge, 1 for lasso)
+        
+        nlambda = 100,     # Number of lambdas considered
+        
+        lambda  = NULL,        # User provided set of lambda (but not only one!) 
+                               # for this function, this option is not
+                               # suggested, reed the documentation!
+                               
+        standardize = TRUE, # flag for standardization. 
+                            # note: coefficient are always returned on the
+                            # original scale
+                            
+        intercept   = TRUE, # intercept is fitted (TRUE) or set to zero (FALSE)
+        
+        [...]                            # there are more entries, see `?glmnet`
+    )
+
+
+
+```{r}
+?h2o.glm
+```
+
+    h2o.glm(x, y, training_frame,
+        
+      nfolds = 0,                  # Number of folds for N-fold cross-validation
+      
+      family = c("gaussian", "binomial", "quasibinomial", "multinomial",
+                 "poisson", "gamma", "tweedie"
+      ),
+      
+      alpha = NULL,           # distribution of regularization between L1 and L2
+      
+      lambda = NULL,                                   # regularization strength
+      
+      lambda_search = FALSE                                 # Use lambda search?
+      nlambdas = -1,                 # Number of lambdas to be used in a search.
+                                     # Default (-1) indicates: If alpha is zero,
+                                     # with lambda search set to True, the value
+                                     # of nlamdas is set to 30 (fewer lambdas
+                                     # are needed for ridge regression)
+                                     # otherwise it is set to 100
+      
+      standardize = TRUE,    # Standardize numeric columns to have zero mean and
+                             # unit variance
+                             
+      missing_values_handling = c("MeanImputation", "Skip"), # ONLY THOSE ONES!!
+      
+      compute_p_values = FALSE,
+      
+      remove_collinear_columns = FALSE,
+      
+      intercept = TRUE,                    # include constant term in the model?
+      
+      link = c("family_default", "identity", "logit", "log", "inverse",
+               "tweedie"
+      ),
+      
+      balance_classes = FALSE,
+      
+      max_runtime_secs = 0        # Maximum allowed runtime in seconds for model
+                                  # training. Use 0 to disable
+    )
+
+
+```{r}
+?speedglm::speedglm
+```
+
+    speedglm(formula, data,
+        family = gaussian(),    # the same of glm, but it must be specified with
+                                # brackets
+                                
+        sparse = NULL,                             # Is the model matrix sparse?
+        
+        trace  = FALSE,  # Do you want to be informed about the model estimation
+                           progress?
+                           
+        method = c('eigen','Cholesky','qr'),   # the chosen method to detect for
+                                               # singulatity
+                                               
+        [...]   # there are more entries (many of them same as in `stats::glm`),
+                # see `?speedglm`
+        
+        ...
+    )
+
+## Data used
+
+```{r}
+data(prostate)                              # from package ElemStatLearn
+prostate
+prostate <- prostate %>% 
+    dplyr::select(-train)
+prostate
+
+set.seed(1)
+(train_idx <- caret::createDataPartition(prostate$lpsa, p = 0.7)[[1]])
+(train_set <- prostate[train_idx, ])
+(test_set  <- prostate[-train_idx, ])
+
+y_test <- test_set %>% dplyr::select(lpsa) %>% as.matrix
+```
+
+
+
+
+
+
+# Glm in R
+
+## Preprocessing
+
+- In order for the coefficients to be easily interpretable, the features
+  must be centered and scaled (aka **normalized**).
+
+- Many software packages will allow the direct input of
+  **categorical/factor** columns in the training frame, however
+  internally any categorical columns will be expanded into binary
+  indicator variables. `caret` package offers a handy utility function,
+  [`caret::dummyVars()`], for dummy/indicator expansion if you need to
+  do this manually.
+
+- **Missing data** will need to be imputed, otherwise in many glm
+  packages, those rows will simply be omitted from the training set at
+  train time.
+  
+     + in the `stats::glm()` function there is an `na.action`
+       argument which allows the user to do one of the three options
+       
+        + `na.omit` and `na.exclude`: observations are removed if they
+          contain any missing values;
+        + `na.pass`: keep all data, including NAs
+        + `na.fail`: returns the object only if it contains no missing
+          values
+
+
+
+## Glm algorithms
+
+### In `stats` (included in all standard installations and runs of R)
+
+An implementation of the standard glm (no regularization) in the
+built-in `stats` package in R called `glm()`.
+
+
+```{r}
+# fit the model
+stats_time <- system.time(
+    fit_stats <- glm(lpsa ~ ., 
+        data   = train_set, 
+        family = gaussian() # Quantitative outcome
+    )
+)
+
+summary(fit_stats)
+```
+
+
+```{r}
+# Predict on the test set
+pred_stats <- predict(fit_stats, newdata = test_set)
+pred_stats
+```
+
+
+> WARNING: Although `train` and `test` have identical structure, not all
+  the levels could be represented in the training data (should be the
+  case, fix it manually).  
+
+
+
+### In `caret`
+
+```{r}
+# Train a caret glm model
+caret_time <- system.time(
+    fit_caret <- caret::train(form = lpsa ~ ., 
+        data      = train_set, 
+        trControl = trainControl(method = "none"),  # fit only one model
+        method    = "glm",  
+        family    = gaussian()
+    )
+)
+
+summary(fit_caret$finalModel)
+
+# ?caret::train --> (look at tuneGrid) -->
+# <http://topepo.github.io/caret/available-models.html> -->
+# (type "glm") --> (look at "glm" _method Value_ column) -->
+# (see which pachage::function() is called)
+```
+
+
+```{r}
+# Predict on the test set
+pred_caret <- predict(fit_caret, newdata = test_set)
+pred_caret
+```
+
+
+```{r}
+identical(pred_caret, pred_stats)
+```
+
+
+
+### In `h2o`
+
+(to a more deeply explanation <https://goo.gl/elYmi3>)
+
+Back-end: **Java**
+
+Typically one would load a data set in parallel from disk using the
+`h2o.importFile()` function, however for the purposes of this tutorial,
+we are going to use a tiny built-in R data set, so we can send that data
+to the H2O cluster (from R memory) using the `as.h2o()` function.
+
+We would also use the `h2o.splitFrame()` function to split the data
+instead of the `caret::createDataPartition()`, but for an
+apples-to-apples comparison with the methods above, it's good to use the
+same exact train and test split, generated the same way as above.
+
+
+```{r}
+# Convert the data into an H2OFrame
+sac <- as.h2o(prostate)
+
+# Split the data into a 70/25% train/test sets
+(train_set_h2o <- sac[train_idx, ])
+(test_set_h2o  <- sac[-train_idx, ])
+```
+
+
+```{r}
+## Identify the predictor columns
+# xcols <- setdiff(names(train), "lpsa")
+
+# Train a default glm model with no regularization
+h2o_time <- system.time(
+    fit_h2o <- h2o.glm(# x = xcols,   # If x is missing,then all columns
+                                      # except y are used.
+        y              = "lpsa",
+        training_frame = train_set_h2o,
+        family         = "gaussian",
+        lambda         = 0
+   )
+)
+
+summary(fit_h2o)
+```
+
+```{r}
+pred_h2o <- h2o.predict(fit_h2o, test_set_h2o)
+pred_h2o
+
+identical(pred_caret, pred_h2o)
+all.equal(pred_caret, pred_h2o)
+# names were lost and the data structure has changed
+```
+
+```{r}
+prediction <- data_frame(
+    caret = pred_caret %>% as.vector,
+    h2o   = pred_h2o %>% as.vector,
+    delta = caret - h2o
+)
+prediction
+
+identical(prediction$caret, prediction$h2o)
+all.equal(prediction$caret, prediction$h2o)
+```
+
+
+```{r}
+# H2O computes many model performance metrics automatically, accessible
+# by utility functions
+perf <- h2o.performance(model = fit_h2o, newdata = test_set_h2o)
+
+perf
+
+perf %>% h2o.r2
+perf %>% h2o.mse
+perf %>% h2o.rmse
+# ...
+```
+
+
+
+### In `speedglm`
+
+
+```{r}
+speedglm_time <- system.time(
+    fit_speed <- speedglm(lpsa ~ .,
+        data   = train_set, 
+        family = gaussian() # Quantitative outcome
+    )
+)
+
+summary(fit_speed)
+```
+
+
+```{r}
+pred_speed <- predict(fit_speed, newdata = test_set)
+pred_speed
+```
+
+```{r}
+identical(pred_caret, pred_speed)
+all.equal(pred_caret, pred_speed)
+
+max(pred_caret - pred_speed)
+```
+
+
+## Time comparison
+
+```{r}
+rbind(
+    stats    = stats_time,
+    caret    = caret_time,
+    h2o      = h2o_time,
+    speedglm = speedglm_time
+)
+```
+
+
+
+
+
+
+# Links 
+
++ R help: `?`
++ <https://en.wikipedia.org/wiki/H2O_(software)>
++ <https://en.wikipedia.org/wiki/Basic_Linear_Algebra_Subprograms>
++ <https://www.r-bloggers.com/faster-r-through-better-blas/>

@@ -419,7 +419,7 @@ repetitions <- 10
 p           <- 0.1
 
 ## machine parameters, i.e. kNN
-## <http://topepo.github.io/caret/custom_models.html>
+## <https://topepo.github.io/caret/available-models.html>
 ## ?kNN
 k_nearest_searched <- seq(from = 1, to = 100, by = 5)
 kernel_considered  <- c(

@@ -1,0 +1,896 @@
+---
+title: "Regularization methods -- Hands-on"
+subtitle: "v-1.2"
+author: "Prof. Dario Gregori -- Dott. Corrado Lanera"
+output: 
+  html_notebook: 
+    toc: yes
+---
+
+# Outline
++ Preamble
+    - Aims
+    - Packages and functions
++ Execution
+    - Load and manage data
+    - Cross validation setup
+    - Ridge
+        - cv-Ridge train
+        - Ridge predicting functions
+        - cv-Ridge training and test validation
+        - Visualization
+        - caret
+        - glmnet
+    - Lasso
+        - caret
+        - glmnet
+    - ENet
+        - caret
+        - glmnet
++ Best models comparison
++ Features' coefficient paths
++ Links
+
+# Preamble
+
+
+## Aims
+
+Main aims of this hands-on are:
+
+Let's assume that we have wide, sparse, collinear or big data. If your
+training set falls into any of those categories, it might be a good idea
+to use a regularized glm.
+
+1. estimate and compare the performance of linear models build upon
+  different regularization methods, in terms of test-RMSE (Root Mean
+  Squared Error):
+    - OLS (none)
+    - Ridge ($\ell_2$)
+    - Lasso ($\ell_1$)
+    - ENet (convex combination between Ridge and Lasso)
+    
+2. introduce relevant packages and their respective functions:
+    - `MASS` (Ridge)
+    - `glmnet` (Lasso, Ridge, Enet, ...)
+    - (`caret`)
+    - `ElemStatLearn` (Data)
+    
+3. show both explicit (manual) cross-validation (CV) and ready-to-use
+   built-in functions for automatic CV features.
+
+
+
+
+
+
+
+
+
+We illustrate the techniques we train a model to predict the `lpsa`
+(prostate specific antigen log level), based on the predictors provided
+by the data set `?ElemStatLearn::prostate`, i.e.:
+
+    - `lcavol`  : log(cancer volume)
+    - `lweight` : log(prostate weight)
+    - `age`     : age
+    - `lbph`    : log(benign prostatic hyperplasia amount)
+    - `sve`     : seminal vesicle invasion
+    - `lcp`     : log of capsular penetration
+    - `gleason` : Gleason score
+    - `pgg45`   : percent of Gleason score 4 or 5
+        
+    - `lpsa`    : prostate specific antigen log level
+
+
+
+For the ridge part, we will use the `MASS` package to provide a full
+computation of the results. After that we provide an alternative faster
+solution both using the `caret` and the `glmnet` procedures. For lasso
+and enet, we consider only the `caret` and the `glmnet` procedures.
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Packages
+
+```{r, echo=TRUE}
+if (!requireNamespace('pacman')) {
+    install.packages('pacman', dependencies = TRUE)
+}
+
+pacman::p_load(
+    MASS,
+    glmnet,
+    ElemStatLearn,
+
+    caret,
+    tidyverse
+)
+```
+
+### `MASS`
+
+`MASS` is a package containing functions and data sets to support
+**Modern Applied Statistics with S (4th edition, 2002)**, by Bill
+Venables Brian Ripley (<http://www.stats.ox.ac.uk/~ripley/>)
+
+We will use the `lm.ridge()` from this package that implements the ridge
+regression. This function give us the motivation to perform all the
+interested computation step by step (often embedded into single higher
+level function).
+
+```{r}
+citation('MASS')
+```
+
+
+
+### `glmnet`
+
+`glmnet` is a package providing a function (`glmnet()`), among other
+related utilities, that fits a glm via penalized maximum likelihood.
+
+The regularization path is computed for the LASSO or elastic-net penalty
+at a grid of values for the regularization parameter lambda.
+
+The algorithm is **extremely fast** (via a
+[Mortran](https://en.wikipedia.org/wiki/Mortran) back-end, which is an
+extension of Fortran used for scientific computation)), and can exploit
+**sparsity** in the input matrix X
+
+The `glmnet` package is a fast implementation, but it requires some
+extra processing up-front to your data if it is not already represented
+as a numeric matrix, e.g. if you have **categorical data** or **missing
+data**, you **need to deal with that yourself**.
+
+```{r}
+citation('glmnet')
+```
+
+
+
+### `ElemStatLearn`
+
+`ElemStatLearn` is a package containing data sets, functions and
+examples from the Book (free e-version): **The Elements of Statistical
+Learning, Data Mining, Inference, and Prediction** by
+Trevor Hastie (<http://web.stanford.edu/~hastie/>),
+Robert Tibshirani (<http://statweb.stanford.edu/~tibs/>) and
+Jerome Friedman (<https://statweb.stanford.edu/~jhf/>)
+
+```{r}
+citation('ElemStatLearn')
+```
+
+
+```{r}
+tidyverse_conflicts()
+```
+
+## Functions
+
+```{r}
+?MASS::lm.ridge
+```
+
+    lm.ridge(formula, data, subset,     # formula, data and subselection of rows
+
+        lambda = 0,                    # scalar (or vector) of Ridge constant(s)
+        
+        [...],                         # there are more entries, see `?lm.ridge`
+        ...
+    )
+
+```{r}
+?glmnet::glmnet
+```
+
+    glmnet(x, y,
+        weights,                                           # observation weights
+        
+        alpha   = 1,       # The elasticnet mixing parameter, with 0 ≤ alpha ≤ 1
+                           # (0 for ridge, 1 for lasso)
+        
+        nlambda = 100,     # Number of lambdas considered
+        
+        lambda  = NULL,        # User provided set of lambda (but not only one!) 
+                               # for this function, this option is not
+                               # suggested, reed the documentation!
+                               
+        standardize = TRUE, # flag for standardization. 
+                            # note: coefficient are always returned on the
+                            # original scale
+                            
+        intercept   = TRUE, # intercept is fitted (TRUE) or set to zero (FALSE)
+        
+        [...]                            # there are more entries, see `?glmnet`
+    )
+
+```{r}
+?glmnet::cv.glmnet
+```
+
+    cv.glmnet(x, y,
+        type.measure = "deviance",  # 'deviance' is the same as 'mse'; there are 
+                                    # five options, see the documentation for 
+                                    # more information about them `?cv.glmnet`
+                                    
+        nfolds = 10,                       # number of fold for cross validation
+        
+        foldid,      # optional vector of values between 1 and nfold identifying
+                     # what fold each observation is in. If supplied, nfold can
+                     # be missing
+        
+        [...],                         # there are more entries, see `?cv.glmnet`
+        
+        ...                     # Other arguments that can be passed to `glmnet`
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+#Execution
+
+## Load and manage data
+
+```{r}
+# ?ElemStatLearn::prostate
+data(prostate)                              # from package ElemStatLearn
+prostate
+prostate <- dplyr::select(prostate, -train)
+```
+
+
+## Cross validation setup
+
+First of all we create a partition of the data in train and test set.
+Test set is a sub-sample that never appears during the training phase,
+and is used only for the final performance analysis. We use $70 \%$ of
+the data to train the models and the remaining $30 \%$ to test them.
+
+```{r}
+(train_idx <- caret::createDataPartition(prostate$lpsa, p = 0.7)[[1]])
+(train_set <- prostate[train_idx, ])
+(test_set  <- prostate[-train_idx, ])
+
+y_test <- dplyr::select(test_set, lpsa) %>% as.matrix
+```
+
+
+After that, we show one possible way to create the partition of the
+training set for the cross validation (k = 10 folds). Here we use the
+function `createFolds` from provided by `caret`. **Important note:** we
+must use the same seed in `set.seed` in order to identify the same
+partition.
+
+```{r}
+k <- 10
+set.seed(1234)
+cv_train <- caret::createFolds(train_set$lpsa,
+    k           = k,
+    list        = TRUE,
+    returnTrain = TRUE
+)
+set.seed(1234)
+cv_validation <- createFolds(train_set$lpsa,
+    k           = k,
+    list        = TRUE,
+    returnTrain = FALSE
+)
+```
+
+
+## Ridge
+### cv-Ridge train
+
+For Ridge, we want to identify the best value for lambda to use in the
+final model, performing the selection via $k$ folds cross-validation.
+
+So, for each value of lambda ($>= 0$) defined, we train a model on each
+of the subset identified by the training partition.
+
+The resulting object will be a list of as many elements as the number of
+lambdas considered, each of them be a list of as many element as the
+number of folds in the cross validation, each of them is the trained
+model (for that lambda on that fold)
+
+```{r}
+lambdas <- seq(from = 0, to = 50, by = 0.1)
+
+ridge_models <- map(lambdas,
+    function(lambda) {
+        map(.x = cv_train,
+            
+            ## This dot means "all the other variables"
+            #
+            ~ MASS::lm.ridge(lpsa ~ .,
+                data   = train_set[.x, ],
+                lambda = lambda
+            )
+        )
+    }
+)
+
+names(ridge_models) <- lambdas
+
+lambdas
+class(ridge_models)
+length(ridge_models)
+str(ridge_models, 1, list.len = 10)        # one CV each value of lambda
+str(ridge_models[[1]], 1)                      # one ridge for each fold
+str(ridge_models[[1]][[1]], 1)                   # content of each model
+str(ridge_models[[2]][[1]], 1)                   # content of each model
+class(ridge_models[[1]][[1]])                      # class of the models
+```
+
+
+### Ridge predicting functions
+
+The function `lm.ridge()` produces objects of class `ridgelm`, for which
+does not exists a `predict()` _method_. Hence we are going to write it
+ourselves.^[For more information about _generic_ functions and _method_
+see <http://adv-r.had.co.nz/OO-essentials.html>]
+
+
+
+
+```{r}
+predict.ridgelm <- function(model, new_x, new_y) {
+    
+    ## to apply the model we have to scale (standardize) the data in the
+    ## same way as the model did in the training set. The parameters for
+    ## the scaling are stored into the model too, so it will be simple
+    ## to retreive them. We use the matrix data structure to take
+    ## advantage of the matrix arithmetics
+    # 
+    scaled_x <- new_x %>% 
+        map2_df(.y = model$xm, ~ (.x - .y)) %>% 
+        map2_df(.y = model$scale, ~ (.x / .y)) %>% 
+        as.matrix
+    
+    ## model$coef is a matrix of coefficient (rows) and lambda (cols),
+    ## if into the model training it was provided more than one lambda
+    ## value.
+    ## 
+    ## optional: in our situation we did not pass more than one value
+    ## of lambda to the mlt because we would like to perform
+    ## cross-validation on each one of them, anyway the following
+    ## formula will work even with models trained directly with more
+    ## than one value of lambda.
+    ## 
+    ## We decide to store it in to a data_frame because of it more
+    ## suitable structure for future manipulations
+    #
+    y_hat <- (scaled_x %*% model$coef + model$ym) %>% 
+        as_tibble()
+    names(y_hat) <- model$lambda
+    
+    ## `summarise_all` is usefull here because the function passed will
+    ## be applied on each column of the dataframe and return a single
+    ## value for each column. The result is a one row data frame, as we
+    ## expected to have.
+    #
+    mse <- y_hat %>% 
+        summarise_all(funs(
+            mean((new_y - .)^2)
+        ))
+    mse <- setNames(as.numeric(mse), names(mse))
+    
+    
+    ## we want that the predict method defined here returns both the
+    ## data frame with the estimated `y_hat`s (y_hat on the rows and
+    ## lambda on the cols) and the value of the corresponding mse. Other
+    ## object (and checks) should be useful but they are out of the
+    ## scope of this hands-on and so we do not include them.
+    list(
+        y_hat = y_hat,
+        mse   = mse
+    )
+}
+
+## try to predict the first row of the data using the model trained for
+## the first value of lambda considered and its first cv-fold (out of
+## ten)
+#
+predict.ridgelm(ridge_models[[2]][[1]],
+    new_x = dplyr::select(train_set[1, ], -lpsa),
+    new_y = dplyr::select(train_set[1, ], lpsa)[[1]]
+)
+```
+
+
+Now it could be useful to define a function to apply to our data
+structures to quickly perform the prediction given a value of lambda and
+the indexes of data we want to test (to avoid its repetition each
+steps).
+
+```{r}
+lambda_predictions <- function(ridge, lambda, index) {
+    
+    ## We want tu use lambda to subset our data, so we have to convert
+    ## it as characters
+    #
+    lambda <- as.character(lambda)
+    
+    ## Here we suppose our data structure, i.e. we explicitely use
+    ## `prostate` and `lpsa` into the function, which is not a good idea
+    ## in general when we are programming. Anyway we suppose that this
+    ## way (without enter deeply in a "good" way to write a function)
+    ## the idea behind this function and its application it could be
+    ## simpler to understand.
+    ## 
+    ## Moreover we know that for each value of lambda we have the same
+    ## number of model as the number of folds, so we can use `map2` to
+    ## go parallel on both the model and the relative set of indeces
+    ## (the training or the test one)
+    # 
+    map2(.x = ridge[[lambda]], .y = index,
+        ~ predict.ridgelm(model = .x,
+            new_x = dplyr::select(train_set[.y, ], -lpsa),
+            new_y = dplyr::select(train_set[.y, ], lpsa)[[1]]
+        )
+    )
+}
+
+ridge_models[['0']]
+lambda_predictions(ridge_models, lambda = 0, index = cv_validation) %>%
+    str()
+```
+
+
+### cv-Ridge training and test validation
+
+Now we finally can perform our prediction on each fold for each value of lambda.
+
+```{r}
+train_rmse <- lambdas %>% 
+    
+    ## for any given value of lambda we want to compute all the 10 fold
+    ## training errors
+    #
+    map(~ lambda_predictions(ridge_models, lambda = ., cv_train)) %>%  # str(2, list.len = 10)
+    
+    ## the resulting output is a list of lambda * k fold predictions, in
+    ## each one, and for each fold within, we extract the mse, compute
+    ## the mean and its square root.
+    map_dbl(function(folds) {
+        map_dbl(folds, ~ .$mse) %>%
+        mean %>% 
+        sqrt
+    }) %>% 
+    
+    ## finally we assure that for each mse it is attached the
+    ## corresponding value of lambda for which it was cross validated
+    ## computed
+    setNames(lambdas)
+
+train_rmse %>% str(1)
+
+plot(lambdas, train_rmse)
+```
+
+As expected the rmse grow-up monotonically as lambda becomes greater.
+
+Now, do the same for the test (validation) set
+
+```{r}
+test_rmse <- lambdas %>% 
+    
+    ## here we have substitute cv_train with cv_validation, and this is
+    ## the only difference!
+    map(
+        ~lambda_predictions(ridge_models, lambda = ., cv_validation)
+    ) %>% 
+    map_dbl(function(folds) {
+        map_dbl(folds, ~ .$mse) %>%
+        mean %>% 
+        sqrt
+    }) %>% 
+    setNames(lambdas)
+
+plot(lambdas, test_rmse)
+range(test_rmse)
+```
+
+Here too, as expected, the validation (test) error decreases as lambda
+becomes greater (and model become less flexible) until a minimum is
+reached and next is start to grow-up because the bias introduced start
+to became too high.
+
+
+### Visualization
+
+We now have all the information to create a summary data frame and plots
+the results obtained
+
+```{r}
+ridge_results <- tibble(
+        lambda = lambdas,
+        train  = train_rmse,
+        test   = test_rmse
+    ) %>% 
+    
+    ## gather is useful to gather more than one column into a couple of 
+    ## ley-value ones
+    #
+    gather(
+        key   = split,
+        value = rmse,
+        train, test
+    )
+ridge_results %>% filter(split == 'test')
+
+best_lambda <- which.min(test_rmse) %>% lambdas[.]
+
+ggplot(ridge_results, aes(x = lambda, y = rmse, colour = split)) + 
+    geom_line() +
+    geom_vline(aes(xintercept = best_lambda))
+```
+
+
+Our best lambda for the validation set is
+```{r}
+best_lambda
+```
+
+and so we finally consider it for the final model
+
+```{r}
+best_ridge_mass <- MASS::lm.ridge(lpsa ~ .,
+    data   = train_set, # all!
+    lambda = best_lambda
+)
+
+ridge_mass <- predict.ridgelm(best_ridge_mass,
+        new_x = dplyr::select(test_set, -lpsa),
+        new_y = dplyr::select(test_set, lpsa)[[1]]
+    )$mse %>% 
+    sqrt
+
+ridge_mass
+```
+
+
+### caret
+
+```{r}
+cv_Ridge_caret <- train(lpsa ~ .,
+          data       = train_set,
+          method     = 'ridge',
+          metric     = "RMSE",
+          tuneLength = 200,
+          preProc    = c("center", "scale"),
+          trControl  = trainControl(
+            method ='cv',
+            number = 10
+          )
+)
+
+plot(cv_Ridge_caret, xlab = expression(lambda))
+```
+
+Using caret the best performance is
+
+```{r}
+ridge_caret <- (
+        predict(cv_Ridge_caret, dplyr::select(test_set, -lpsa)) -
+        y_test
+    )^2 %>% 
+    mean %>%
+    sqrt
+
+ridge_caret
+```
+
+
+### glmnet
+
+```{r}
+ridge_cv_model <- glmnet::cv.glmnet(
+    dplyr::select(train_set, -lpsa) %>% as.matrix,
+    dplyr::select(train_set, lpsa)[[1]] %>% as.matrix,
+    alpha = 0
+)
+
+plot(ridge_cv_model)
+```
+
+```{r}
+y_hat_best_ridge <- predict(ridge_cv_model,
+    dplyr::select(test_set, -lpsa) %>% as.matrix,
+    s = 'lambda.min' # 'lambda.1se'
+)
+
+y_hat_1se_ridge <- predict(ridge_cv_model,
+    dplyr::select(test_set, -lpsa) %>% as.matrix,
+    s = 'lambda.1se'
+)
+
+ridge_glmnet <- (y_hat_best_ridge - y_test)^2 %>% 
+    mean %>%
+    sqrt
+
+ridge_glmnet_1se <- (y_hat_1se_ridge - y_test)^2 %>% 
+    mean %>%
+    sqrt
+
+ridge_glmnet
+ridge_glmnet_1se
+```
+
+
+
+
+
+## Lasso
+
+### caret
+
+```{r}
+cv_lasso_caret <- train(lpsa ~ .,
+          data      = train_set,
+          method    = 'lasso',
+          metric    = "RMSE",
+          tuneLength = 200,
+          preProc   = c("center", "scale"),
+          trControl = trainControl(
+            method ='cv',
+            number = 10
+          )
+)
+
+plot(cv_lasso_caret, xlab = expression(lambda))
+```
+
+Using caret the best performance is
+
+```{r}
+lasso_caret <- (
+        predict(cv_lasso_caret, dplyr::select(test_set, -lpsa)) -
+        y_test
+    )^2 %>% 
+    mean %>%
+    sqrt
+
+lasso_caret
+```
+
+
+
+
+
+### glmnet
+```{r}
+lasso_cv_model <- glmnet::cv.glmnet(
+    dplyr::select(train_set, -lpsa) %>% as.matrix,
+    dplyr::select(train_set, lpsa)[[1]] %>% as.matrix,
+    alpha = 1
+)
+
+plot(lasso_cv_model)
+```
+
+```{r}
+y_hat_best_lasso <- predict(lasso_cv_model,
+    dplyr::select(test_set, -lpsa) %>% as.matrix,
+    s = 'lambda.min' # 'lambda.1se'
+)
+
+y_hat_1se_lasso <- predict(lasso_cv_model,
+    dplyr::select(test_set, -lpsa) %>% as.matrix,
+    s = 'lambda.1se'
+)
+
+lasso_glmnet <- (y_hat_best_lasso - y_test)^2 %>% 
+    mean %>%
+    sqrt
+
+lasso_glmnet_1se <- (y_hat_1se_lasso - y_test)^2 %>% 
+    mean %>%
+    sqrt
+
+lasso_glmnet
+lasso_glmnet_1se
+```
+
+
+
+
+## ENet
+
+### caret
+
+```{r}
+cv_enet_caret <- train(lpsa ~ .,
+          data       = train_set,
+          method     = 'enet',
+          metric     = "RMSE",
+          tuneLength = 200,
+          preProc    = c("center", "scale"),
+          trControl = trainControl(
+            method ='cv',
+            number = 10
+          )
+)
+
+cv_enet_caret$bestTune
+```
+
+Using caret the best performance is
+
+```{r}
+enet_caret <- (predict(cv_enet_caret,
+    dplyr::select(test_set, -lpsa)
+) - y_test)^2 %>% 
+    mean %>%
+    sqrt
+
+enet_caret
+```
+
+
+
+### glmnet
+```{r}
+alphas <- seq(0, 1, length.out = 10)
+
+enet_cv_models <- map(alphas,
+    ~ glmnet::cv.glmnet(
+        dplyr::select(train_set, -lpsa) %>% as.matrix,
+        dplyr::select(train_set, lpsa)[[1]] %>% as.matrix,
+        alpha = .
+    )
+)
+names(enet_cv_models) <- alphas
+
+walk(enet_cv_models, plot)
+```
+
+```{r}
+y_hat_best_enets <- map(enet_cv_models,
+    ~ predict(.,
+        dplyr::select(test_set, -lpsa) %>% as.matrix,
+        s = 'lambda.min' # 'lambda.1se'
+    )
+)
+
+y_hat_1se_enets <- map(enet_cv_models,
+    ~ predict(.,
+        dplyr::select(test_set, -lpsa) %>% as.matrix,
+        s = 'lambda.1se'
+    )
+)
+
+enet_glmnet <- map_dbl(y_hat_best_enets,
+    ~ (. - y_test)^2 %>% 
+        mean %>%
+        sqrt
+)
+
+enet_glmnet_1se <- map_dbl(y_hat_1se_enets,
+    ~ (. - y_test)^2 %>% 
+        mean %>%
+        sqrt
+)
+
+enet_glmnet
+enet_glmnet_1se
+
+which.min(enet_glmnet)
+which.min(enet_glmnet_1se)
+
+enet_glmnet     <- enet_glmnet[which.min(enet_glmnet)]
+enet_glmnet_1se <- enet_glmnet_1se[which.min(enet_glmnet_1se)]
+
+enet_glmnet
+enet_glmnet_1se
+```
+
+
+
+
+
+# Best models comparison
+
+```{r}
+bests_rms <- c(ridge_mass, 
+        ridge_caret,
+        ridge_glmnet_1se,
+        ridge_glmnet,
+        lasso_caret,
+        lasso_glmnet_1se,
+        lasso_glmnet,
+        enet_caret,
+        enet_glmnet,
+        enet_glmnet_1se
+)
+
+best_names <- c('ridge_mass',
+        'ridge_caret',
+        'ridge_glmnet_1se',
+        'ridge_glmnet',
+        'lasso_caret',
+        'lasso_glmnet_1se',
+        'lasso_glmnet',
+        'enet_caret',
+        'enet_glmnet',
+        'enet_glmnet_1se'
+)
+
+setNames(bests_rms, best_names) %>% sort
+```
+
+```{r}
+barplot(sort(bests_rms),
+    names.arg = best_names[order(bests_rms)],
+    ylab = 'rmse',
+    las  = 2,
+    cex.names = 0.6
+)
+```
+
+
+# Features' coefficient paths
+
+```{r   n=21, echo=T,eval=T}
+fit_glmnet <- glmnet(
+    x = dplyr::select(train_set, -lpsa) %>% as.matrix,
+    y = dplyr::select(train_set, lpsa)[[1]] %>% as.matrix
+)
+```
+
+
+We can visualize the coefficients by executing the `plot` function.
+
+Each curve corresponds to a variable. It shows the path of its
+coefficient against the $\ell_1$-norm of the whole coefficient vector at
+as $\lambda$ varies. IDs of the coefficients can be visualized by `label
+= TRUE` option.
+
+The axis above indicates the number of nonzero coefficients at the
+current $\lambda$, which is the effective degrees of freedom for the
+LASSO.
+
+
+```{r   n=22, echo=T,eval=T,fig.height=3}
+plot(fit_glmnet, label = TRUE)                                    # ?plot.glmnet
+```
+
+
+The `predict()` method for glmnet returns the the estimation of the
+outcome for each step of regularization
+
+```{r}
+predict(fit_glmnet, newx = dplyr::select(test_set, -lpsa) %>% as.matrix)
+```
+
+
+
+
+# Links 
+
++ R help: `?`
++ MASS <http://www.stats.ox.ac.uk/pub/MASS4/>
++ `?glm`
++ Mortran: <https://en.wikipedia.org/wiki/Mortran> (extension of Fortran
+  used for scientific computation)
++ glmnet <http://web.stanford.edu/~hastie/glmnet/glmnet_beta.html>
++ ESL <https://statweb.stanford.edu/~tibs/ElemStatLearn/>

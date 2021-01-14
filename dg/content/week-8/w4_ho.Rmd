@@ -1,0 +1,1637 @@
+---
+title: "Week 4: review -- Hands-on"
+author: "Prof. Dario Gregori -- Dott. Corrado Lanera -- Dott. Slavica Zec"
+output: 
+  html_notebook: 
+    toc: yes
+---
+
+# Outline
+
++ Preamble
+    - Aims
+    - Algorithms
+    - Packages
+    - Data used
+
++ Analyses
+    - data splitting and preparation
+    - training/validation/selection models
+        - LASSO
+        - Ridge
+        - Elastic network
+        - CART
+        - Conditional tree
+        - Random Forest
+        - Random Forest with Boruta variable selection
+    - Boruta variable importance
+
++ Comparisons
+
++ Links
+
+
+
+
+
+
+
+# Preamble
+
+## Aims
+
+The purpose of this hands-on is to:
+
+1. Review the main functions and procedures introducted in the past weeks
+
+2. Perform a Machine Learning task through different models
+   
+3. Compare ad discuss the results obtained
+
+
+To achieve these objectives, we use a real data set (that has been 
+manipulated in order to be anonymized), that comprises clinical
+information with the aim to model a functional status score based on
+"Lifestyle", "Symptoms", and other functional information provided.
+
+
+
+## Algorithms
+
+The algorithms considered will be the ones introducted in the past weeks:
+lasso, ridge, elastic net, cart, random forest and, finally, random
+forest comined with Boruta (which will select (within cross-validation steps)
+the variables for one extra random forest model.
+
+All the algorithm will be run on a set of full data (no missing data present).
+In particular, we will use 90% of the data as training/validation subset and
+the other 10% of them as testing one. The train strategy is to select the
+simplest 10-folds cross-validated trained model within one standard error of
+the empirically optimal model (Breiman et al. (1984)), using 
+Root Mean Squared Error as a criteria.
+
+All the algorithms will be run (trained, validated and tested) using the
+`caret` common interface. For the parametric algorithm (i.e. lasso, ridge
+and elastic net) we have to *dummify* the categorical variable and, in
+particular, we will change the ordinal variables into cardinal ones. 
+Furthermore, before the parametric algorithms, we perform centering 
+(around the mean) and scaling (by standard deviation) of all the continuous
+data, to avoid magnitude issues. For the non parametric algorithms, i.e. the
+tree based ones: cart, ctree, random forest and Boruta, we do not need to
+perform neither the dummification nor the centering and re-scaling of the data.
+
+
+
+
+## Packages
+
+For the purpose of this hands-on we are going to load the `caret`
+package, which is the only one truly needed. The package
+`Boruta` will be loaded to perform and plot the overall variable importance,
+used only as a benchmark for the selection made by the other algorithms.
+The `tidyverse` package will be used and useful for data management while
+the `stringr` one will be loaded as a tool to manage strings
+(we will use it to manage the names of the categorical variables converted
+into dummies). Finally, we will introduce the `pryr` package which is an
+incredible powerful tool to take a look _inside_ the R structure and 
+functionality, e.g. we will use it to show the maximum (difference in the)
+amount of RAM we need to perform each one of the training algorithms.
+Following what we have done in each hands-on, we use the package `pacman` 
+to install and load the selected package in an efficient way.
+
+```{r load_packages, warning=FALSE, include=FALSE}
+if (!requireNamespace('pacman')) {
+    install.packages('pacman', dependencies = TRUE)
+}
+
+pacman::p_load(
+    Boruta,
+    caret,
+
+    tidyverse,
+    stringr,
+    pryr,
+    rpart.plot
+)
+# load("./workspace_how4.RData")
+```
+
+
+    train(x, y,
+        
+        ## model to use
+        #
+        method     = "rf",
+        
+        ## string vector for pre-processing of the data
+        #
+        preProcess = NULL,  
+        
+        ## summary metric to be used to select the optimal model.
+        #
+        metric     = ifelse(is.factor(y), "Accuracy", "RMSE"), 
+        
+        ## should the metric be maximized (or minimized)?
+        #
+        maximize   = ifelse(metric %in% c("RMSE", "logLoss"), FALSE, TRUE),
+                            
+        
+        ## how the function acts
+        #
+        trControl  = trainControl(
+        
+            method            = 'boot',
+            number            = ifelse(grepl("cv", method), 10, 25),
+            repeats           = ,
+            search            = "grid",
+            savePredictions   = FALSE,
+            selectionFunction = "best",
+            seeds             = NA,
+            [...]
+        ),
+        
+        ## a data frame with possible tuning values.
+        ## Suggestion: use `expand.grind()`
+        #
+        tuneGrid   = NULL,            
+        
+        ## amount of granularity in the tuning parameter grid.
+        #
+        tuneLength = 3,
+        
+        ## Other explicit parameters
+        #
+        [...],
+        
+        ## Other implicit parameters
+        #
+        ...
+    )
+
+
+
+
+
+
+## Data used
+
+First load and take a look to the data provided
+
+```{r}
+load('datafake_w4.rda')
+
+datafake_w4 <- datafake_w4 %>% 
+
+    ## put the outcome at the first position for coding convenience
+    #
+    dplyr::select(outcome, everything()) %>%
+    
+    ## transform ordinal factors
+    #
+    mutate(
+        symptom_2 = factor(symptom_2,
+                levels  = c('none', 'one', 'both'),
+                ordered = TRUE
+        )
+)
+
+## check for no missing data anywhere, as expected:
+#
+# map_int(datafake_w4, ~ is.na(.) %>% sum)
+#
+
+datafake_w4
+```
+
+
+
+
+
+
+
+
+# Analyses
+
+## data preparation and splitting
+
+Now, for the glm algorithms, convert the ordinal and the categorical
+variables in, respectively, cardinal and dummies.
+
+```{r, message=TRUE, warning=FALSE}
+data_glm <- datafake_w4 %>% mutate(symptom_2 = as.integer(symptom_2))
+
+data_glm <- data_glm %>% 
+    dummyVars(formula = outcome ~ .,
+        data = .,
+        sep  = '_'
+    ) %>% 
+    predict(newdata = data_glm) %>% 
+    as_data_frame %>% 
+    bind_cols(datafake_w4['outcome'], .)
+
+## check for no other factor variables, as expected:
+#
+# map_lgl(datafake_w4, is.factor) %>% sum
+
+data_glm
+```
+
+
+And next, split the data in training and test set.
+
+```{r}
+set.seed(12345)
+train_idx <- createDataPartition(datafake_w4$outcome,
+                p = 0.9, list = FALSE
+)
+
+## We will convert data_frame in data.frame because `caret` used to assign 
+## names to the rows, that is in contrast with the philosophy of tidyverse
+## which complains with it (through warnings and maybe errors too). 
+#
+(train_tree <- datafake_w4[train_idx, ] %>% as.data.frame)
+(test_tree  <- datafake_w4[-train_idx, ] %>% as.data.frame)
+(train_glm <- data_glm[train_idx, ] %>% as.data.frame)
+(test_glm  <- data_glm[-train_idx, ] %>% as.data.frame)
+```
+
+
+
+
+## training/validation/selection models
+
+First of all, we decide the standard parameter for the training processes,
+i.e. the number of folds, that is the number of time the cross-validation 
+procedure has to be repeated for each choice of the parameter (to reduce the
+probability that the solutions found depend on the actual choice of the 
+folds randomly selected only once) and the set of (all different) seeds, one
+for each step (fold) of the described procedure.
+
+
+```{r setup, warning=FALSE}
+## `gc()` is quite never needed. Here we will use it to reset the
+## "max ammount of RAM" used by R. This way, when `pryr::mem_change` access
+## to the system information, the difference in the maximum ammount actualy
+## spent for the process is only the maximum ammount of memory used.
+#
+## for reproducibility, we have to set the seeds: `caret` needs a list of
+## the (different) seeds to use with each cross-validation step, plus one
+## more for to use with the final model selected.
+
+tune_length <- 100
+n_folds     <- 10
+n_reps      <- 10
+
+caret_seeds <- map(seq_len(n_folds * n_reps + 1),
+                   ~ seq(from = tune_length * (. - 1) + 1,
+                         to   = tune_length * .,
+                         length.out = tune_length)
+)
+```
+
+
+### LASSO
+
+Train a LASSO algorithm saves both the time and the RAM cost too
+
+```{r first_run_lasso, warning=FALSE}
+gc(verbose = FALSE, reset = TRUE)
+lasso_time <- system.time(
+    lasso_mem <- pryr::mem_change(
+        lasso_model <- train(
+            x = train_glm[-1],
+            y = train_glm[[1]],
+            method     = "lasso",
+            preProcess = c("center", "scale"),
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds, # 10
+                repeats           = n_reps,  # 10
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds
+            ),                   
+            tuneLength = tune_length
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', lasso_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(lasso_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+lasso_rmse <- (predict(lasso_model, test_glm[-1]) - test_glm[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', lasso_rmse)
+
+final_lasso_param <- lasso_model$finalModel$tuneValue
+message('Final tuned parameter is: ',
+        names(final_lasso_param), ' = ', final_lasso_param %>% round(3)
+)
+
+final_lasso <- lasso_model$finalModel
+
+
+lasso_best_beta <- predict(final_lasso,
+        s    = final_lasso_param[[1]],
+        mode = 'fraction',
+        type = 'coefficients'
+    )$coefficients %>% 
+    `[`(. != 0) %>% 
+    round(3) %>% 
+    sort
+
+message('The variables used by the best (up to one SE) LASSO machine, with
+        the corresponding beta values, are:\n',
+        paste(lasso_best_beta, names(lasso_best_beta),
+              sep = '\t= ',
+              collapse = '\n'
+        )
+)
+
+
+
+## ?elasticnet:::plot.enet
+## c("fraction", "penalty", "L1norm", "step")
+#
+plot(final_lasso, xvar = 'fraction', use.color = TRUE)
+
+## ?caret:::plot.train
+#
+ggplot(lasso_model, highlight = TRUE)
+```
+
+As we can see, the automatic tuning grid search does not perform at best, i.e.
+the chosen parameters is on the left border and, in particular it does not
+seem to  identify the minimum. So we have to run again the algorithm
+considering an explicit grid of tuning parameter (the `fraction`) centered
+in the region near the minimum identified.
+
+```{r second_run_lasso, warning=FALSE}
+gc(verbose = FALSE, reset = TRUE)
+lasso2_time <- system.time(
+    lasso2_mem <- pryr::mem_change(
+        lasso2_model <- train(
+            x = train_glm[-1],
+            y = train_glm[[1]],
+            method     = "lasso",
+            preProcess = c("center", "scale"),
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds # note: use the same seed!!
+            ),                   
+            tuneGrid   = expand.grid(
+                fraction = seq(
+                    from =  1e-3,
+                    to   = 25e-2,
+                    length.out = tune_length
+                )
+            )
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', lasso2_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(lasso2_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+lasso2_rmse <- (predict(lasso2_model, test_glm[-1]) - test_glm[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', lasso2_rmse)
+
+
+final_lasso2_param <- lasso2_model$finalModel$tuneValue
+message('Final tuned parameter is: ',
+        names(final_lasso2_param), ' = ', final_lasso2_param %>% round(3)
+)
+
+
+final_lasso2 <- lasso2_model$finalModel
+
+lasso2_best_beta <- predict(final_lasso2,
+        s    = final_lasso2_param[[1]],
+        mode = 'fraction',
+        type = 'coefficients'
+    )$coefficients %>% 
+    `[`(. != 0) %>% 
+    round(3)
+
+message('The variables used by the best (up to one SE) LASSO machine, with
+        the corresponding beta values, are:\n',
+        paste(lasso2_best_beta, names(lasso2_best_beta),
+              sep = '\t= ',
+              collapse = '\n'
+        )
+)
+
+
+plot(final_lasso2, xvar = 'fraction', use.color = TRUE)
+
+ggplot(lasso2_model, highlight = TRUE)
+```
+
+Now the best (up to one SE) parameter selected is both far form the borders
+and near an evident empirical minimum discovered. So we can be satisfied and
+retain the corresponding model as the one to select for the LASSO procedure.
+
+
+### Ridge
+
+```{r first_run_ridge, warning=FALSE}
+gc(verbose = FALSE, reset = TRUE)
+ridge_time <- system.time(
+    ridge_mem <- pryr::mem_change(
+        ridge_model <- train(
+            x = train_glm[-1],
+            y = train_glm[[1]],
+            method     = "ridge",
+            preProcess = c("center", "scale"),
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds
+            ),                   
+            tuneLength = tune_length
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', ridge_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(ridge_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+ridge_rmse <- (predict(ridge_model, test_glm[-1]) - test_glm[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', ridge_rmse)
+
+final_ridge_param <- ridge_model$finalModel$tuneValue
+message('Final tuned parameter is: ',
+        names(final_ridge_param), ' = ', final_ridge_param %>% round(3)
+)
+
+final_ridge <- ridge_model$finalModel
+
+ridge_best_beta <- predict(final_ridge,
+        s    = final_ridge_param[[1]],
+        mode = 'fraction',
+        type = 'coefficients'
+    )$coefficients %>% 
+    `[`(. != 0) %>% 
+    round(3)
+
+message('The variables used by the best (up to one SE) ridge machine, with
+        the corresponding beta values, are:\n',
+        paste(ridge_best_beta, names(ridge_best_beta),
+              sep = '\t= ',
+              collapse = '\n'
+        )
+)
+
+
+
+plot(final_ridge, xvar = 'fraction', use.color = TRUE)
+
+ggplot(ridge_model, highlight = TRUE)
+```
+
+Here the parameter selected by the `caret` automatic search grid seams to 
+be unefficent too: the parameter selected is on the right border and it
+seams that there were some issues on the left one (maybe an extreme 
+value was considered). So re-run the algorithm within a range of
+values (approximately) cantered around the one selected and with borders
+likely to contain a minimum value (note that the curve try to go flat so
+we can expected that a minimum is not so far from the value selected).
+
+
+```{r second_run_ridge, warning=FALSE}
+gc(verbose = FALSE, reset = TRUE)
+ridge2_time <- system.time(
+    ridge2_mem <- pryr::mem_change(
+        ridge2_model <- train(
+            x = train_glm[-1],
+            y = train_glm[[1]],
+            method     = "ridge",
+            preProcess = c("center", "scale"),
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds # note: use the same seed!!
+            ),                   
+            tuneGrid   = expand.grid(
+                lambda = seq(
+                    from = 7e-2,
+                    to   = 7e-1,
+                    length.out = tune_length
+                )
+            )
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', ridge2_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(ridge2_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+ridge2_rmse <- (predict(ridge2_model, test_glm[-1]) - test_glm[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', ridge2_rmse)
+
+
+final_ridge2_param <- ridge2_model$finalModel$tuneValue
+message('Final tuned parameters are: ',
+        names(final_ridge2_param), ' = ', final_ridge2_param %>% round(3)
+)
+final_ridge2 <- ridge2_model$finalModel
+
+
+ridge2_best_beta <- predict(final_ridge2,
+        s    = final_ridge2_param[[1]],
+        mode = 'fraction',
+        type = 'coefficients'
+    )$coefficients %>% 
+    `[`(. != 0) %>% 
+    round(3)
+
+message('The variables used by the best (up to one SE) ridge machine, with
+        the corresponding beta values, are:\n',
+        paste(ridge2_best_beta, names(ridge2_best_beta),
+              sep = '\t= ',
+              collapse = '\n'
+        )
+)
+
+
+
+plot(final_ridge2, xvar = 'fraction', use.color = TRUE)
+
+ggplot(ridge2_model, highlight = TRUE)
+```
+
+
+
+### Elastic network
+
+```{r first_run_enet}
+gc(verbose = FALSE, reset = TRUE)
+enet_time <- system.time(
+    enet_mem <- pryr::mem_change(
+        enet_model <- train(
+            x = train_glm[-1],
+            y = train_glm[[1]],
+            method     = "enet",
+            preProcess = c("center", "scale"),
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds
+            ),                   
+            tuneLength = tune_length/10
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', enet_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(enet_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+enet_rmse <- (predict(enet_model, test_glm[-1]) - test_glm[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', enet_rmse)
+
+
+final_enet_param <- enet_model$finalModel$tuneValue
+message('Final tuned parameter is: ',
+        names(final_enet_param)[[1]], ' = ',
+        final_enet_param[[1]] %>% round(3),
+        '\n',
+        names(final_enet_param)[[2]], ' = ',
+        final_enet_param[[2]] %>% round(3)
+)
+
+final_enet <- enet_model$finalModel
+
+
+enet_best_beta <- predict(final_enet,
+        s    = final_enet_param[[1]],
+        mode = 'fraction',
+        type = 'coefficients'
+    )$coefficients %>% 
+    `[`(. != 0) %>% 
+    round(3)
+
+message('The variables used by the best (up to one SE) elastic network
+        machine, with the corresponding beta values, are:\n',
+        paste(enet_best_beta, names(enet_best_beta),
+              sep = '\t= ',
+              collapse = '\n'
+        )
+)
+
+plot(final_enet, use.color = TRUE)
+
+ggplot(enet_model, highlight = TRUE)
+```
+
+
+We can see from the graph that the main responsible of the performance
+variation is the `fraction` parameter, while the parameter `lambda` yields 
+linear translation of the curve driven by the `fraction`.
+
+Moreover, we can see again that the parameters chosen in automatic
+by `caret` are sub-optimal, i.e. the chosen couple of `fraction`-`lambda` is
+a point on the (left) border of the graph. On the other hand, the
+`fraction`-point of best performance seams to be identified (near 0.1), so
+we can focus on a range of `fraction`s around this point.
+
+With regard to the `lambda` parameter, its behaviour is not very clear:
+the curve of `lambda` = 0 has a curvature quite different from the other;
+however, it appears that the performance improves as the
+value increases! Hence, for the parameter `lambda` we can search more
+values in a wider range close to 1, but still considering `lambda` = 0,
+i.e. the LASSO.
+
+
+```{r second_run_enet, warning=FALSE}
+gc(verbose = FALSE, reset = TRUE)
+enet2_time <- system.time(
+    enet2_mem <- pryr::mem_change(
+        enet2_model <- train(
+            x = train_glm[-1],
+            y = train_glm[[1]],
+            method     = "enet",
+            preProcess = c("center", "scale"),
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds # note: use the same seed!!
+            ),                   
+            tuneGrid   = expand.grid(
+                fraction = seq(
+                    from = 1e-3,
+                    to   = 3e-1,
+                    length.out = tune_length/2
+                ),
+                lambda = c(0, seq(
+                    from = 1e-3,
+                    to   = 7e-1,
+                    length.out = tune_length/2 - 1
+                ))
+            )
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', enet2_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(enet2_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+enet2_rmse <- (predict(enet2_model, test_glm[-1]) - test_glm[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', enet2_rmse)
+
+final_enet2_param <- enet2_model$finalModel$tuneValue
+message('Final tuned parameter is: ',
+        names(final_enet2_param)[[1]], ' = ',
+        final_enet2_param[[1]] %>% round(3),
+        '\n',
+        names(final_enet2_param)[[2]], ' = ',
+        final_enet2_param[[2]] %>% round(3)
+)
+
+final_enet2 <- enet2_model$finalModel
+
+
+enet2_best_beta <- predict(final_enet2,
+        s    = final_enet2_param[[1]],
+        mode = 'fraction',
+        type = 'coefficients'
+    )$coefficients %>% 
+    `[`(. != 0) %>% 
+    round(3)
+
+message('The variables used by the best (up to one SE) elastic network
+        machine, with the corresponding beta values, are:\n',
+        paste(enet2_best_beta, names(enet2_best_beta),
+              sep = '\t= ',
+              collapse = '\n'
+        )
+)
+
+
+
+
+plot(final_enet2, xvar = 'fraction', use.color = TRUE)
+
+ggplot(enet2_model, highlight = TRUE)
+```
+
+So, it seams that the best possible tuned parameters lies with `lamda` 
+very high, next to 1, and `fraction` next to 0.15. Anyway we are looking
+for the simplest model up to one SE from the best one and it seams that
+the lasso (`lambda` = 0) take it all. For the sake of completeness, we will
+re-run the model on a wider range of `lambda`s and to a more focused range 
+of `fraction`s.
+
+
+
+```{r third_run_enet, warning=FALSE}
+gc(verbose = FALSE, reset = TRUE)
+enet3_time <- system.time(
+    enet3_mem <- pryr::mem_change(
+        enet3_model <- train(
+            x = train_glm[-1],
+            y = train_glm[[1]],
+            method     = "enet",
+            preProcess = c("center", "scale"),
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds # note: use the same seed!!
+            ),                   
+            tuneGrid   = expand.grid(
+                fraction = seq(
+                    from = 5e-2,
+                    to   = 2e-1,
+                    length.out = tune_length
+                ),
+                lambda = c(0, 
+                    seq(
+                        from = 1e-5,
+                        to   = 0.999,
+                        length.out = tune_length - 1
+                    )
+                )
+            )
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', enet3_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(enet3_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+enet3_rmse <- (predict(enet3_model, test_glm[-1]) - test_glm[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', enet3_rmse)
+
+
+final_enet3_param <- enet3_model$finalModel$tuneValue
+message('Final tuned parameter is: ',
+        names(final_enet3_param)[[1]], ' = ',
+        final_enet3_param[[1]] %>% round(3),
+        '\n',
+        names(final_enet3_param)[[2]], ' = ',
+        final_enet3_param[[2]]
+)
+
+final_enet3 <- enet3_model$finalModel
+
+
+enet3_best_beta <- predict(final_enet3,
+        s    = final_enet3_param[[1]],
+        mode = 'fraction',
+        type = 'coefficients'
+    )$coefficients %>% 
+    `[`(. != 0) %>% 
+    round(3)
+
+message('The variables used by the best (up to one SE) elastic network
+        machine, with the corresponding beta values, are:\n',
+        paste(enet3_best_beta, names(enet3_best_beta),
+              sep = '\t= ',
+              collapse = '\n'
+        )
+)
+
+
+
+
+plot(final_enet3, xvar = 'fraction', use.color = TRUE)
+
+ggplot(enet3_model, plotType = 'scatter', highlight = TRUE) +
+    theme(legend.position="none")
+```
+
+Again, the `lambda` parameter lies on the border of the interval considered
+and. Hence, we decide to go furter on the investigation. This time, we can
+be confident in split the range of `lambda`s in two, i.e. a lower set aimed
+to find the optimal value for the final selection of the model and an upper
+one aimed to ifentify the best model over all the one observed. On the
+otehr hand, we hav just identify a adeguate range of value for `fraction`
+and so we will not change it.
+
+```{r fourth_run_enet, warning=FALSE}
+gc(verbose = FALSE, reset = TRUE)
+enet4_time <- system.time(
+    enet4_mem <- pryr::mem_change(
+        enet4_model <- train(
+            x = train_glm[-1],
+            y = train_glm[[1]],
+            method     = "enet",
+            preProcess = c("center", "scale"),
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds # note: use the same seed!!
+            ),                   
+            tuneGrid   = expand.grid(
+                fraction = seq(
+                    from = 5e-2,
+                    to   = 2e-1,
+                    length.out = tune_length
+                ),
+                lambda = c(0, 
+                    seq(
+                        from = 1e-7,
+                        to   = 1e-5,
+                        length.out = tune_length/2
+                    ),
+                    seq(
+                        from = 0.99,
+                        to   = 0.9999,
+                        length.out = tune_length/2 - 1
+                    )
+                )
+            )
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', enet4_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(enet4_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+enet4_rmse <- (predict(enet4_model, test_glm[-1]) - test_glm[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', enet4_rmse)
+
+
+final_enet4_param <- enet4_model$finalModel$tuneValue
+message('Final tuned parameter is: ',
+        names(final_enet4_param)[[1]], ' = ',
+        final_enet4_param[[1]] %>% round(3),
+        '\n',
+        names(final_enet4_param)[[2]], ' = ',
+        final_enet4_param[[2]]
+)
+
+final_enet4 <- enet4_model$finalModel
+
+
+enet4_best_beta <- predict(final_enet4,
+        s    = final_enet4_param[[1]],
+        mode = 'fraction',
+        type = 'coefficients'
+    )$coefficients %>% 
+    `[`(. != 0) %>% 
+    round(3)
+
+message('The variables used by the best (up to one SE) elastic network
+        machine, with the corresponding beta values, are:\n',
+        paste(enet4_best_beta, names(enet4_best_beta),
+              sep = '\t= ',
+              collapse = '\n'
+        )
+)
+
+
+
+
+plot(final_enet4, xvar = 'fraction', use.color = TRUE)
+
+ggplot(enet4_model, plotType = 'scatter', highlight = TRUE) +
+    theme(legend.position="none")
+```
+
+
+
+
+### CART
+
+Now, we will continue using tree-based algorithm, hence we movre from the
+pre-processed data to the original one.
+
+```{r first_run_cart, warning=FALSE}
+gc(verbose = FALSE, reset = TRUE)
+cart_time <- system.time(
+    cart_mem <- pryr::mem_change(
+        cart_model <- train(
+            x = train_tree[-1],          # here there are no dummy variables
+            y = train_tree[[1]],
+            method     = "rpart",
+            # preProcess = c("center", "scale"),
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds
+            ),                   
+            tuneLength = tune_length
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', cart_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(cart_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+cart_rmse <- (predict(cart_model, test_tree[-1]) - test_tree[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', cart_rmse)
+
+final_cart_param <- cart_model$finalModel$tuneValue
+message('Final tuned parameter is: ',
+        names(final_cart_param)[[1]], ' = ',
+        final_cart_param[[1]] %>% round(3)
+)
+
+final_cart <- cart_model$finalModel
+
+
+cart_best_split_label <- labels(final_cart,
+        digits = 3L,
+        minlength = 0L
+    ) %>% 
+    str_subset('[^root]')
+
+cart_best_split <- data_frame(
+    variable  = cart_best_split_label %>% str_extract('\\w+'),
+    direction = cart_best_split_label %>% str_extract('\\W+'),
+    cutoff    = cart_best_split_label %>% str_extract('\\w+$')
+)
+
+message('The variables used by the best (up to one SE) CART machine are:\n',
+        paste(cart_best_split_label, collapse = '\n')
+)
+
+ggplot(cart_model, highlight = TRUE)
+
+rpart.plot(final_cart)
+title("Final CART")
+
+train_tree %>% 
+    dplyr::select(outcome) %>% 
+    bind_cols(final_cart$where %>% data_frame(leaf_node = factor(.))) %>% 
+    ggplot(aes(outcome, fill = leaf_node)) +
+    geom_density(alpha = 0.5)
+```
+
+We have identified three groups, selecting `cp` far from borders. If we look at
+the distribution graph, it seems that the optimal number of groups should be near
+4 or 5 (blue and green distribution have two evident local maximum).
+Let us stry to have a closer view to the `cp` selected.
+
+```{r second_run_cart, warning=FALSE}
+gc(verbose = FALSE, reset = TRUE)
+cart2_time <- system.time(
+    cart2_mem <- pryr::mem_change(
+        cart2_model <- train(
+            x = train_tree[-1],          # here there are no dummy variables
+            y = train_tree[[1]],
+            method     = "rpart",
+            # preProcess = c("center", "scale"),
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds
+            ),                   
+            tuneGrid   = expand.grid(
+                cp = seq(
+                    from = 2.5e-2,
+                    to   = 7.5e-2,
+                    length.out = tune_length
+                )
+            )
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', cart2_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(cart2_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+cart2_rmse <- (predict(cart2_model, test_tree[-1]) - test_tree[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', cart2_rmse)
+
+final_cart2_param <- cart2_model$finalModel$tuneValue
+message('Final tuned parameter is: ',
+        names(final_cart2_param)[[1]], ' = ',
+        final_cart2_param[[1]] %>% round(3)
+)
+
+final_cart2 <- cart2_model$finalModel
+
+
+cart2_best_split_label <- labels(final_cart2,
+        digits = 3L,
+        minlength = 0L
+    ) %>% 
+    str_subset('[^root]')
+
+cart2_best_split <- data_frame(
+    variable  = cart2_best_split_label %>% str_extract('\\w+'),
+    direction = cart2_best_split_label %>% str_extract('\\W+'),
+    cutoff    = cart2_best_split_label %>% str_extract('\\w+$')
+)
+
+message('The variables used by the best (up to one SE) CART machine are:\n',
+        paste(cart2_best_split_label, collapse = '\n')
+)
+
+ggplot(cart2_model, highlight = TRUE)
+
+rpart.plot(final_cart2)
+title("Final cart2")
+
+train_tree %>% 
+    dplyr::select(outcome) %>% 
+    bind_cols(final_cart2$where %>% data_frame(leaf_node = factor(.))) %>% 
+    ggplot(aes(outcome, fill = leaf_node)) +
+    geom_density(alpha = 0.5)
+```
+
+The selected `cp` moved back to the left, meaning that there is some
+granularity in a way to improve the selection. Run a last refinement of the model
+to find a simpler model, within one SE from the best.
+
+
+```{r third_run_cart, warning=FALSE}
+gc(verbose = FALSE, reset = TRUE)
+cart3_time <- system.time(
+    cart3_mem <- pryr::mem_change(
+        cart3_model <- train(
+            x = train_tree[-1],          # here there are no dummy variables
+            y = train_tree[[1]],
+            method     = "rpart",
+            # preProcess = c("center", "scale"),
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds
+            ),                   
+            tuneGrid   = expand.grid(
+                cp = seq(
+                    from = 3e-2,
+                    to   = 5e-2,
+                    length.out = tune_length
+                )
+            )
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', cart3_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(cart3_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+cart3_rmse <- (predict(cart3_model, test_tree[-1]) - test_tree[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', cart3_rmse)
+
+final_cart3_param <- cart3_model$finalModel$tuneValue
+message('Final tuned parameter is: ',
+        names(final_cart3_param)[[1]], ' = ',
+        final_cart3_param[[1]] %>% round(3)
+)
+
+ggplot(cart3_model, highlight = TRUE)
+
+final_cart3 <- cart3_model$finalModel
+rpart.plot(final_cart3)
+title("Final cart3")
+
+cart3_best_split_label <- labels(final_cart3,
+        digits = 3L,
+        minlength = 0L
+    ) %>% 
+    str_subset('[^root]')
+
+cart3_best_split <- data_frame(
+    variable  = cart3_best_split_label %>% str_extract('\\w+'),
+    direction = cart3_best_split_label %>% str_extract('\\W+'),
+    cutoff    = cart3_best_split_label %>% str_extract('\\w+$')
+)
+
+message('The variables used by the best (up to one SE) CART machine are:\n',
+        paste(cart3_best_split_label, collapse = '\n')
+)
+
+train_tree %>% 
+    dplyr::select(outcome) %>% 
+    bind_cols(final_cart3$where %>% data_frame(leaf_node = factor(.))) %>% 
+    ggplot(aes(outcome, fill = leaf_node)) +
+    geom_density(alpha = 0.5)
+```
+
+The `cp` parameter and the performance remain the same. There is still some
+possibility of improvement regarding the distributions of the final node,
+expecially for the blue one (as in the plots, i.e. leaf_node #6), but 
+according to Braiman, i.e. our methodology choice, that best tuned machine
+can overfit the training set more than the one chosen (up to one SE).
+
+
+### Conditional tree
+
+```{r first_run_ctree}
+gc(verbose = FALSE, reset = TRUE)
+ctree_time <- system.time(
+    ctree_mem <- pryr::mem_change(
+        ctree_model <- train(
+            x = train_tree[-1],
+            y = train_tree[[1]],
+            method     = "ctree",
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds
+            ),                   
+            tuneLength = tune_length
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', ctree_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(ctree_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+ctree_rmse <- (predict(ctree_model, test_tree[-1]) - test_tree[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', ctree_rmse)
+
+
+final_ctree_param <- ctree_model$bestTune
+message('Final tuned parameter is: ',
+        names(final_ctree_param)[[1]], ' = ',
+        final_ctree_param[[1]] %>% round(3)
+)
+
+final_ctree <- ctree_model$finalModel
+
+
+ctree_best_split_label <- labels(final_ctree,
+        digits = 3L,
+        minlength = 0L
+    ) %>% 
+    str_subset('[^root]')
+
+flat_ctree <- unlist(final_ctree@tree)
+
+ctree_best_split <- unique(
+    flat_ctree[grepl("*variableName",names(flat_ctree))]
+)
+
+
+message('The variables used by the best (up to one SE) CART machine are:\n',
+        paste(ctree_best_split, collapse = '\n')
+)
+
+
+plot(final_ctree)
+
+ggplot(ctree_model, highlight = TRUE)
+
+
+train_tree %>% 
+    dplyr::select(outcome) %>%  # `ctree` is an S4 object, subsetted by "@"
+    bind_cols(final_ctree@where %>% data_frame(leaf_node = factor(.))) %>% 
+    ggplot(aes(outcome, fill = leaf_node)) +
+    geom_density(alpha = 0.5)
+```
+
+As evident in the graph of parameters against the rmse, `cart` span
+the `mincriterion` (1 -$\alpha$) from 0 to 1, which is teorethically
+correct but statistically unusefull, i.e standard choice is to admit an
+error ($\alpha$) fewer than 0.05. Moreover, the selected tree is reduced
+to only the root, because the level of significance requested is too high to
+perform any split. In conditional inference trees, $\alpha$ represents the minimum
+significance level admitted for each split. Hence, it has no-sense to force
+the value of `mincriterion` above 0.95. On the other hand, it should be
+possible to admit the consideration of less significant split, e.g. up to a
+level of `mincriterion` of 0.9. Anyway the split will be performed in order
+of significance. Let re-run the training procedure asking to `cart` to span
+`mincriterion` from 0.9 to 0.95.
+
+
+```{r second_run_ctree}
+gc(verbose = FALSE, reset = TRUE)
+ctree2_time <- system.time(
+    ctree2_mem <- pryr::mem_change(
+        ctree2_model <- train(
+            x = train_tree[-1],
+            y = train_tree[[1]],
+            method     = "ctree",
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds
+            ),                   
+            tuneGrid   = expand.grid(
+                mincriterion = seq(
+                    from = .9,
+                    to   = .95,
+                    length.out = tune_length
+                )
+            )
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', ctree2_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(ctree2_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+ctree2_rmse <- (predict(ctree2_model, test_tree[-1]) - test_tree[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', ctree2_rmse)
+
+
+final_ctree2_param <- ctree2_model$bestTune
+
+message('Final tuned parameter is: ',
+        names(final_ctree2_param)[[1]], ' = ',
+        final_ctree2_param[[1]] %>% round(3)
+)
+
+final_ctree2 <- ctree2_model$finalModel
+
+
+flat_ctree2 <- unlist(final_ctree2@tree)
+
+ctree2_best_split <- unique(
+    flat_ctree2[grepl("*variableName",names(flat_ctree2))]
+)
+
+
+message('The variables used by the best (up to one SE) CART machine are:\n',
+        paste(ctree2_best_split, collapse = '\n')
+)
+
+
+plot(final_ctree2)
+
+ggplot(ctree2_model, highlight = TRUE)
+
+train_tree %>% 
+    dplyr::select(outcome) %>% 
+    bind_cols(final_ctree2@where %>% data_frame(leaf_node = factor(.))) %>% 
+    ggplot(aes(outcome, fill = leaf_node)) +
+    geom_density(alpha = 0.5)
+```
+
+The final model selected a `mincriterion` of 0.95 which is at the border of
+the graph and the upper limit selected by us. This, generally, leaves some
+space for improvement, but we have no interest to select 
+a `mincriterion` above this threshold (mainly because the primary pourpose
+of this kind of tree is not the performance itself but a sort of a balance 
+between the performance and the statistical interpretation).
+
+
+### Random Forest
+
+```{r first_run_rf}
+gc(verbose = FALSE, reset = TRUE)
+rf_time <- system.time(
+    rf_mem <- pryr::mem_change(
+        rf_model <- train(
+            x = train_tree[-1],
+            y = train_tree[[1]],
+            method     = "rf",
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds
+            ),                   
+            tuneGrid   = expand.grid(
+                mtry = seq.int(           # consider all the possibilities!
+                    from = 2,
+                    to   = length(train_tree) - 1
+                )
+            )
+        )
+    )
+)
+
+
+message()
+message('Elapsed time: ', rf_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(rf_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+rf_rmse <- (predict(rf_model, test_tree[-1]) - test_tree[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', rf_rmse)
+
+final_rf_param <- rf_model$bestTune
+message('Final tuned parameter is: ',
+        names(final_rf_param)[[1]], ' = ',
+        final_rf_param[[1]] %>% round(3)
+)
+
+
+final_rf <- rf_model$finalModel
+plot(final_rf)
+
+ggplot(rf_model, highlight = TRUE)
+```
+
+As we can see, the standard approach for random forest adopted by `caret` to
+consider the maximum number of tree fixed at 500 is acceptable for this
+example, i.e. that number is sufficient to permit to the error rate to go
+flat. On the other hand, we can appreciate that `mtry` selected is 4 (with
+the best one being 9), and this is a demonstration that the best
+performance for the random forest algrorithm is achived when it resamples
+few variables each time. Furthermore, we can see that the error grows
+very quickly as the `mtry` decreases down to very low level.
+
+
+### Random Forest + Boruta
+
+```{r first_run_boruta}
+gc(verbose = FALSE, reset = TRUE)
+boruta_time <- system.time(
+    boruta_mem <- pryr::mem_change(
+        boruta_model <- train(
+            x = train_tree[-1],
+            y = train_tree[[1]],
+            method     = "Boruta",
+            metric     = "RMSE",
+            maximize   = FALSE,
+            trControl  = trainControl(
+                method            = 'repeatedcv',
+                number            = n_folds,
+                repeats           = n_reps,
+                search            = "grid",
+                selectionFunction = "oneSE",
+                savePredictions   = "final",
+                seeds             = caret_seeds
+            ),                   
+            tuneGrid   = expand.grid(
+                mtry = seq.int(
+                    from = 2,
+                    to   = 12  # simple bests are 5-10, oneSE best is 3
+                )
+            )
+        )
+    )
+)
+
+
+message()
+message('Elapsed time: ', boruta_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(boruta_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+boruta_rmse <- (predict(boruta_model, test_tree[-1]) - test_tree[[1]])^2 %>% 
+    mean %>%
+    sqrt
+message('Test rmse: ', boruta_rmse)
+
+final_boruta_param <- boruta_model$bestTune
+message('Final tuned parameter is: ',
+        names(final_boruta_param)[[1]], ' = ',
+        final_boruta_param[[1]] %>% round(3)
+)
+
+
+final_boruta <- boruta_model$finalModel
+plot(final_boruta)
+
+ggplot(boruta_model, highlight = TRUE)
+```
+
+ Random Forest combined with an automatic and blind Boruta, in presence of
+ collinearity, hampers the performance of the algorithm leading to overfitting
+ even in a cross validated environment. What is the possible reason for this? 
+ 
+## Boruta variable importance
+
+```{r Boruta}
+gc(verbose = FALSE, reset = TRUE)
+only_boruta_time <- system.time(
+    only_boruta_mem <- pryr:::mem_change(
+        boruta_varimp <- Boruta(
+            x = train_tree[-1],
+            y = train_tree[[1]]
+        )
+    )
+)
+
+message()
+message('Elapsed time: ', only_boruta_time['elapsed'] %>% round(3), ' seconds')
+message('Used memory: ',
+        format(only_boruta_mem/(2^20), digits = 3, scientific = FALSE),
+        ' MB')
+
+
+boruta_varimp
+
+final_decision <- data_frame(
+    variable = names(boruta_varimp$finalDecision),
+    decision = as.character(boruta_varimp$finalDecision)
+) %>% 
+    group_by(decision) %>% 
+    summarise(
+        variable = list(variable)
+    )
+
+final_decision$variable[[1]]
+
+plot(boruta_varimp)
+```
+ The answer to the previuos question probably lies in the following:
+ 1. Boruta is an algorithm that cannot detect automatically collinear variables.
+ It just finds the important ones. As we can see, different collinear variables
+ have been included in the important variables set.
+ 2. Low number of variables selected.
+ 
+ So if random forest has to process models chosing from a small set of variables
+ that suffer collinearity, it fails to deliver satisfying result. 
+
+
+
+# Comparisons
+
+```{r}
+times <- map_dbl(list(lasso2_time, ridge2_time, enet3_time, cart3_time,
+                      ctree2_time, rf_time, boruta_time, only_boruta_time),
+        ~ .['elapsed'] %>%
+            round(3)
+)
+
+RAMs <- map_dbl(list(lasso2_mem, ridge2_mem, enet4_mem, cart3_mem,
+                     ctree2_mem, rf_mem, boruta_mem, only_boruta_mem),
+        ~ format(./(2^20),
+                 digits = 3,
+                 scientific = FALSE
+        ) %>% as.double
+)
+
+rmse <- c(lasso2_rmse, ridge2_rmse, enet4_rmse, cart3_rmse, ctree2_rmse,
+          rf_rmse, boruta_rmse, NA)
+
+
+varselect <- map_chr(
+    list(
+        lasso2_best_beta %>% names %>% unique,
+        ridge2_best_beta %>% names %>% unique,
+        enet4_best_beta %>% names %>% unique,
+        cart3_best_split$variable %>% unique,
+        ctree2_best_split %>% unique
+    ),
+    ~ paste(., collapse = ' - ')
+)
+
+data_frame(
+    MLT        = c('LASSO', 'ridge', 'enet', 'CART', 'ctree',
+                   'RandomForest','RF_Boruta', 'Boruta_alone'
+    ),
+    `time (s)` = times,
+    `RAM (MB)` = RAMs,
+    RMSE       = rmse,
+    `var used` = c(varselect,
+                   rep('<NA>', length(rmse) - length(varselect))
+    )
+)
+```
+
+Given the test set, the algorithm that shows optimal properties in 
+in terms of RMSE and computer time is CART. It has lowest RMSE and
+relativelly low cost in terms of time and RAM. The one that has the worst
+performance is automated random forest with incorporated Boruta.
+
+Again, keep in mind that we did not use an optimal dataset, but the one
+contaminated with several problems (collinearity, low number of obs and
+vars).
+
+In terms of variables used, recurrent relevant variables are BMI, height,
+syntom4, syntom11, syntom 12 and their collinear counterparts.
+
+
+
+# Links 
+
++ R help: `?`
+
++ Breiman, L., Friedman, J., Stone, C. J., & Olshen, R. A. (1984).
+  Classification and regression trees. CRC press.
