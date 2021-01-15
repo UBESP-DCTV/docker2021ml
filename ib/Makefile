@@ -18,7 +18,9 @@ run:
 build:
 	docker build -t docker2021ml:$(module)-$(version) .
 
-push:
+tag:
 	docker tag docker2021ml:$(module)-$(version) corradolanera/docker2021ml:$(module)-$(version)
 	docker tag docker2021ml:$(module)-$(version) corradolanera/docker2021ml:$(module)-latest
+
+push: tag
 	docker push -a corradolanera/docker2021ml
