@@ -1,0 +1,534 @@
+---
+title: "CART -- Hands-on"
+subtitle: "v-1.2"
+author: "Prof. Dario Gregori -- Dott. Corrado Lanera"
+output: 
+  html_notebook: 
+    toc: yes
+---
+
+# Outline
++ Preamble
+    - Aims
+    - Packages
+    - Functions
+    - Data used
++ Case study
+    - Exploration
+    - Basic tree model
+    - Exhaustive tree model
+    - Pruned tree model
++ Classification exercise
+    - Data set definition and Aims
+    - Partitioning
+    - Model setting and tuning
+    - Honest performance estimation
+    - Further considerations and improvements 
++ Links
+
+
+
+
+
+
+# Preamble
+
+## Aims
+
+Main aim of this hands-on are:
+
+1. Show an application of CARTs to a public health data case study
+
+2. Show and use some different implementation of CART in R:
+   
+   + `tree`
+   + `rpart`
+   + `caret`
+
+3. Perform a MLT task on CART
+
+
+To illustrate how to achieve these objectives, we analyze median health
+cost levels per neighborhoods in California. Data includes geographical
+information (Longitude and Latitude) and administrative data (number of
+households, number of doctors, the percent of chronic patients and the
+median income of each neighborhood.
+
+
+
+
+## Packages
+
+```{r}
+library(tree)
+library(rpart)
+library(caret)
+library(tidyverse)
+```
+
+
+### `tree`
+
+Original implementation of the CART algorithm by Brian Ripley
+(<http://www.stats.ox.ac.uk/~ripley/>)
+
+```{r}
+citation('tree')
+```
+
+
+### `rpart`
+
+The `rpart::rpart()` function differs from the `tree::tree()` function
+mainly for the fact that it allows for surrogate variables, a way to
+manage missingness in the training data involving regressors (not the
+outcome!).
+
+```{r}
+citation('rpart')
+```
+
+
+
+
+## Functions
+
+### `tree`
+```{r}
+?tree::tree
+```
+
+    tree(formula, data, subset, weights,
+        
+        na.action = na.pass,
+        
+        control   = tree.control(nobs, ...),  # options to control the algorithm
+        
+        split     = c("deviance", "gini"),
+        
+        [...]   # take a look at option `model` and `method` equal "model.frame"
+        
+        ...
+    )
+
+```{r}
+?tree::tree.control
+```
+
+    tree.control(nobs,          # The number of observations in the training set
+        
+        mincut  = 5,                    # min number of obs in either child node
+        
+        minsize = 10,                               # smallest allowed node size
+        
+        mindev  = 0.01 # min within-node deviance as a fraction of the root node
+                       # for the node to be split.
+    )
+
+
+### `rpart`
+
+```{r}
+?tree::partition.tree                                               # ?plot.tree
+```
+
+    partition.tree(tree,
+        
+        label = "yval",                 # column to be used to label the regions
+        
+        add   = FALSE,       # If TRUE, add to existing plot, or start a new one
+        
+        ordvars,        # The ordering of the variables to be used in a 2D plot.
+                        # Character string of length 2 (the first will be the x)
+        
+        ...                                         # other graphical parameters
+    )
+
+```{r}
+?rpart::rpart
+```
+
+    rpart(formula, data, weights, subset,
+        
+        na.action = na.rpart,    # `na.rpart` (default) deletes all observations
+                                 # for which y is missing, but keeps those
+                                 # in which one or more predictors are missing
+        
+        method, # If missing then the routine tries to make an intelligent guess
+        
+        control,                              # options to control the algorithm
+        
+        [...],
+        
+        ...
+    )
+
+
+```{r}
+?rpart::rpart.control
+```
+
+    rpart.control(minsplit = 20,    # min obs that must exist in a node in order
+                                    # for a split to be attempted
+        
+        minbucket = round(minsplit/3),     # min obs in any terminal <leaf> node
+        
+        cp = 0.01,  # complexity parameter. Any split that does not decrease the
+                    # overall lack of fit by a factor of cp is not attempted.
+                    
+        xval = 10,                        # number of folds for cross validation
+        
+        surrogatestyle = 0,        # controls the selection of a best surrogate. 
+                                   # (read the documentation)
+        
+        maxdepth = 30,             # maximum depth of any node of the final tree
+        
+        [...],
+        
+        ...
+        )
+
+
+```{r}
+?rpart::prune
+```
+
+    prune(tree,
+        
+        cp,    # Complexity parameter to which the rpart object will be trimmed.
+        
+        ...
+    )
+
+
+
+
+## Data used
+
+```{r}
+load(file.path("data", "health_data.dat"))
+health_data
+```
+
+
+
+```{r}
+identical(health_data$Latitude, health_data$Lat)
+identical(health_data$Longitude, health_data$Long)
+
+health_data <- health_data %>% 
+    dplyr::select(-Latitude, -Longitude)
+
+health_data
+```
+
+
+
+
+
+
+# Case study: Health cost in California
+
+## Exploration
+
+First of all we take a look at the distribution of the variable involved
+and, in particular we plot a map of the region (based on the Lat end
+Long) colored with intensity proportional to the health cost per unit
+(the neighborhood).
+
+```{r}
+map_dbl(health_data, ~ is.na(.) %>% sum)
+
+walk(setdiff(names(health_data), c('Lat', 'Long')),
+     ~ hist(health_data[[.]],
+        main = paste0('Histogram of ', .),
+        xlab = names(health_data[.]) %>% gsub(pattern = '_', replacement = ' ')
+    )
+)
+
+ggplot(health_data, aes(health_cost)) +
+    geom_histogram() +
+    ggtitle("Healthcare cost by neighbourhood") +
+    xlab("Median healthcare cost (in 1000$)")
+
+ggplot(health_data, aes(x = Long, y = Lat)) +
+    geom_point(aes(colour = health_cost)) +
+    ggtitle("Healthcare spatial distribution")
+```
+
+
+
+
+## Basic tree model
+
+Start to fit a partition based **only on latitude and longitude**
+
+Take a look at the tree in graphical and textual representation.
+
+```{r}
+tree_model <- tree(health_cost ~ Long + Lat,
+    data = health_data
+)
+
+plot(tree_model)
+text(tree_model)
+
+tree_model
+```
+
+
+To better understand the results, put them on the map
+
+```{r}
+## create the gray scale for the basic plot system for each observation
+#
+cost_deciles <- quantile(health_data$health_cost,
+    seq(from = 0,  to = 1, length.out = 10)
+)
+
+cut_health   <- cut(health_data$health_cost, cost_deciles,
+                     include.lowest = TRUE
+)
+
+intensity <- gray(10:2/11)[cut_health]
+
+
+
+## plot the map using the base plot system and add the partition to it
+#
+plot(health_data$Long, health_data$Lat,
+     col  = intensity,
+     pch  = 20, # plot character: filled dot.
+     xlab = "Longitude",
+     ylab = "Latitude"
+)
+partition.tree(tree_model, ordvars = c("Long","Lat"), add = TRUE)
+```
+
+
+
+
+## Exaustive tree model
+
+Now, we include all the other information in the tree.
+
+It is useful to perform cross validation and management of missing data
+in the covariates (even if we know that in this data set there are no
+missing data). After that, we perform some pruning of the trees we
+train.
+
+For these reasons we start to use the functions provided by the `rpart`
+package.
+
+
+```{r}
+rpart_model <- rpart(
+    health_cost ~ .,
+    data    = health_data,
+    control = rpart.control(
+            cp   = 0.001,
+            xval = 10
+    )
+)
+
+plot(rpart_model,
+     uniform  = TRUE,
+     compress = TRUE,
+     margin   = 0.05,
+     branch   = 0.5
+) # ?plot.rpart
+text(rpart_model, use.n = FALSE)
+title("Regression Tree for Healthcare cost")
+
+par(mfrow = c(1, 2))                             # two plots on one page
+rsq.rpart(rpart_model) # plots the jackknifed error versus the number of
+                       # splits
+par(mfrow = c(1, 1))
+```
+
+
+```{r}
+printcp(rpart_model)
+
+plotcp(rpart_model)
+```
+
+
+```{r}
+summary(rpart_model)
+```
+
+
+
+
+## Pruned tree model
+
+Sometimes, it can be useful to have a smaller tree suitable for _human_
+interpretation instead of a more accurate _machine_ prediction.
+
+This way, we can prune the tree to a higher level of `cp` to obtain a
+tree with fewer leaves. Hence, even if we retain less leaves, the data
+in each one of them were selected by the tree to minimize the impurity.
+
+
+```{r}
+rpart_prune <- prune(rpart_model, cp = 0.02) # pruning the tree
+
+plot(rpart_prune,
+     uniform  = TRUE,
+     compress = TRUE,
+     margin   = 0.06,
+     branch   = 0.5
+)
+text(rpart_prune)
+title("Regression Tree for Healthcare cost")
+```
+
+```{r}
+plotcp(rpart_prune)
+par(mfrow = c(1, 2))   # two plots on one page
+rsq.rpart(rpart_prune) # plots the jackknifed error versus the number of
+                       # splits
+par(mfrow = c(1, 1))
+```
+
+Let us see the data distribution on the leaves:
+
+```{r}
+health_data %>% 
+    dplyr::select(health_cost) %>% 
+    bind_cols(rpart_prune$where %>%
+    data_frame(leaf_node = factor(.))) %>% 
+    ggplot(aes(health_cost, fill = leaf_node)) +
+    geom_density(alpha = 0.5)
+```
+
+
+
+
+# Classification exercise
+>  using `caret`'s `rpart` for trees (same data)
+
+## Data set definition and Aims
+
+ + Create a binary outcome, starting from the health cost
+   ("high cost" for health_cost higher than 80% of the distribution)
+   
+ + Aims:
+    - scientific: predict "high" and "low" health cost class in
+                  California
+    - MLT       : max cross validate accuracy on test set
+
+
+```{r}
+health_data_class <- health_data  %>% 
+    mutate(high_cost = (health_cost > quantile(health_cost, 0.8)) %>% 
+               factor(levels = c(TRUE, FALSE))
+    ) %>% 
+    dplyr::select(-health_cost)
+
+ggplot(health_data_class, aes(high_cost)) +
+    geom_bar()
+```
+
+
+
+
+## Partitioning
+
+```{r}
+set.seed(1)
+train_idx <- caret::createDataPartition(health_data_class$high_cost,
+                p = 0.7
+)[[1]]
+
+train_set <- health_data_class[train_idx, ]
+test_set  <- health_data_class[-train_idx, ]
+```
+
+```{r}
+ggplot(train_set, aes(high_cost)) +
+    geom_bar()
+
+ggplot(test_set, aes(high_cost)) +
+    geom_bar()
+```
+
+
+
+
+## Model setting and tuning
+
+```{r}
+set.seed(1234)
+tune_grid <- expand.grid(
+    # .cp = seq(from = 1e-3 ,to = 1e-1 , length.out = 50)
+    # .cp = seq(from = 1e-4 ,to = 1e-2 , length.out = 50)
+     .cp = seq(from = 1e-4 ,to = 2e-3 , length.out = 100)
+)
+
+caret_rpart <- train(high_cost ~ .,
+    data = train_set,
+    method    = "rpart",
+    metric    = "Accuracy",
+    trControl = trainControl(
+        method ='cv',
+        number = 10
+    ),
+    tuneGrid = tune_grid
+)
+
+plot(caret_rpart)
+```
+
+
+```{r}
+plot(caret_rpart$finalModel,
+     uniform  = TRUE,
+     compress = TRUE,
+     margin   = 0.06,
+     branch   = 0.5
+)
+text(caret_rpart$finalModel) # ?test.rpart
+title("Classification Tree for High Healthcare cost")
+```
+
+
+
+
+## Honest performance estimation
+
+```{r}
+y_hat_train <- predict(caret_rpart, train_set)
+confusionMatrix(train_set$high_cost, y_hat_train)
+
+y_hat_test <- predict(caret_rpart, test_set)
+confusionMatrix(test_set$high_cost, y_hat_test)
+```
+
+
+
+
+## Further consideration and improvements 
+
++  Can the performance increase by considering weights in the training
+   phase?
++  Can you use `caret` to perform this kind of improvement?
+
+> Remember that weighting has to be done **after** the cross validation
+> partition if you want to remain honest... (why?)
+
+
+
++ Can you really say to be _honest_ if you decide to use weights _after_
+  you have seen (on the test set) that your classification accuracy was
+  unbalanced the same way the class was?
+
+
+
+
+
+
+# Links 
+
++ R help: `?`

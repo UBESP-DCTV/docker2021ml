@@ -48,12 +48,13 @@ RUN install2.r \
   randomForest \
   gam \
   Boruta \
-  ggcorrplot
+  ggcorrplot \
+  e1071
 
   
 # Setup global profile's option for fixed-snapshot package repository
 RUN echo '\
-  options(list(repos = "$pkgsnap")) \
+  options(list(repos = "https://packagemanager.rstudio.com/all/__linux__/focal/642006")) \
   ' > /usr/local/lib/R/etc/Rprofile.site
   
 # copy all the materials from the local directory to the docker wd
